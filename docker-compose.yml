@@ -1,0 +1,30 @@
+services:
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - web
+      - api
+
+  web:
+    build: ./apps/web
+    environment:
+      - NEXTAUTH_URL=http://localhost
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-dev-secret-change-me}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - API_URL=http://api:4000
+      - ALLOWED_DOMAIN=${ALLOWED_DOMAIN:-}
+    depends_on:
+      - api
+
+  api:
+    build: ./apps/api
+    environment:
+      - DATABASE_PATH=/data/db.sqlite
+      - PORT=4000
+    volumes:
+      - ./data:/data
