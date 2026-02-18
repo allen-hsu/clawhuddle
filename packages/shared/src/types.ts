@@ -15,6 +15,7 @@ export interface User {
   status: 'active' | 'disabled';
   gateway_port: number | null;
   gateway_status: 'running' | 'stopped' | 'provisioning' | null;
+  gateway_token: string | null;
   created_at: string;
   last_login: string | null;
 }
@@ -98,4 +99,10 @@ export interface ApiResponse<T> {
 export interface ApiError {
   error: string;
   message: string;
+}
+
+export interface GatewayActionResponse {
+  userId: string;
+  gateway_port: number | null;
+  gateway_status: 'running' | 'stopped' | 'provisioning' | null;
 }

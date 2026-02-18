@@ -14,15 +14,17 @@
   },
   "dependencies": {
     "@clawteam/shared": "*",
-    "fastify": "^5.2.0",
     "@fastify/cors": "^10.0.0",
     "@fastify/websocket": "^11.0.0",
     "better-sqlite3": "^11.8.0",
-    "uuid": "^11.1.0",
-    "dotenv": "^16.4.0"
+    "dockerode": "^4.0.9",
+    "dotenv": "^16.4.0",
+    "fastify": "^5.2.0",
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.0",
+    "@types/dockerode": "^4.0.1",
     "@types/uuid": "^10.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",

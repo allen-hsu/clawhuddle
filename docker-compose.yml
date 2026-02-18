@@ -29,6 +29,18 @@ services:
       dockerfile: apps/api/Dockerfile
     environment:
       - DATABASE_PATH=/data/db.sqlite
+      - DATA_DIR=/data
       - PORT=4000
     volumes:
       - ./data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      gateway-base:
+        condition: service_completed_successfully
+
+  gateway-base:
+    build:
+      context: ./docker/gateway
+    image: clawteam-gateway:local
+    command: ["echo", "Gateway image built"]
+    entrypoint: []

@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS users (
     status TEXT NOT NULL DEFAULT 'active',
     gateway_port INTEGER,
     gateway_status TEXT,
+    gateway_token TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     last_login DATETIME
 );

@@ -12,6 +12,7 @@ export function UserTable({ initialUsers }: Props) {
   const [users, setUsers] = useState(initialUsers);
   const [email, setEmail] = useState('');
   const [adding, setAdding] = useState(false);
+  const [loadingGateway, setLoadingGateway] = useState<string | null>(null);
 
   const refresh = async () => {
     const res = await apiFetch<{ data: User[] }>('/api/admin/users');
@@ -44,6 +45,95 @@ export function UserTable({ initialUsers }: Props) {
     await refresh();
   };
 
+  const gatewayAction = async (userId: string, action: 'deploy' | 'start' | 'stop' | 'remove') => {
+    setLoadingGateway(userId);
+    try {
+      switch (action) {
+        case 'deploy':
+          await apiFetch(`/api/admin/users/${userId}/gateway`, { method: 'POST' });
+          break;
+        case 'start':
+          await apiFetch(`/api/admin/users/${userId}/gateway/start`, { method: 'POST' });
+          break;
+        case 'stop':
+          await apiFetch(`/api/admin/users/${userId}/gateway/stop`, { method: 'POST' });
+          break;
+        case 'remove':
+          await apiFetch(`/api/admin/users/${userId}/gateway`, { method: 'DELETE' });
+          break;
+      }
+      await refresh();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setLoadingGateway(null);
+    }
+  };
+
+  const openGateway = (user: User) => {
+    const hostname = window.location.hostname;
+    window.open(`http://${hostname}:${user.gateway_port}/?token=${user.gateway_token}`, '_blank');
+  };
+
+  const gatewayStatusBadge = (user: User) => {
+    if (!user.gateway_status) {
+      return <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500">not deployed</span>;
+    }
+    if (user.gateway_status === 'running') {
+      return <span className="px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">running</span>;
+    }
+    if (user.gateway_status === 'stopped') {
+      return <span className="px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-700">stopped</span>;
+    }
+    return <span className="px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700">{user.gateway_status}</span>;
+  };
+
+  const gatewayActions = (user: User) => {
+    const isLoading = loadingGateway === user.id;
+    if (isLoading) {
+      return <span className="text-xs text-gray-400">working...</span>;
+    }
+
+    if (!user.gateway_status) {
+      return (
+        <button onClick={() => gatewayAction(user.id, 'deploy')} className="text-xs text-blue-600 hover:underline">
+          Deploy
+        </button>
+      );
+    }
+
+    if (user.gateway_status === 'running') {
+      return (
+        <span className="flex gap-2">
+          <button onClick={() => openGateway(user)} className="text-xs text-green-600 hover:underline">
+            Open
+          </button>
+          <button onClick={() => gatewayAction(user.id, 'stop')} className="text-xs text-yellow-600 hover:underline">
+            Stop
+          </button>
+          <button onClick={() => gatewayAction(user.id, 'remove')} className="text-xs text-red-600 hover:underline">
+            Remove
+          </button>
+        </span>
+      );
+    }
+
+    if (user.gateway_status === 'stopped') {
+      return (
+        <span className="flex gap-2">
+          <button onClick={() => gatewayAction(user.id, 'start')} className="text-xs text-green-600 hover:underline">
+            Start
+          </button>
+          <button onClick={() => gatewayAction(user.id, 'remove')} className="text-xs text-red-600 hover:underline">
+            Remove
+          </button>
+        </span>
+      );
+    }
+
+    return null;
+  };
+
   return (
     <div>
       <div className="flex gap-2 mb-6">
@@ -70,6 +160,7 @@ export function UserTable({ initialUsers }: Props) {
             <th className="pb-3 font-medium">Email</th>
             <th className="pb-3 font-medium">Role</th>
             <th className="pb-3 font-medium">Status</th>
+            <th className="pb-3 font-medium">Gateway</th>
             <th className="pb-3 font-medium">Actions</th>
           </tr>
         </thead>
@@ -93,12 +184,23 @@ export function UserTable({ initialUsers }: Props) {
                 </span>
               </td>
               <td className="py-3">
-                <button
-                  onClick={() => toggleStatus(user)}
-                  className="text-sm text-blue-600 hover:underline"
-                >
-                  {user.status === 'active' ? 'Disable' : 'Enable'}
-                </button>
+                <div className="flex items-center gap-2">
+                  {gatewayStatusBadge(user)}
+                  {user.gateway_port && (
+                    <span className="text-xs text-gray-400">:{user.gateway_port}</span>
+                  )}
+                </div>
+              </td>
+              <td className="py-3">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => toggleStatus(user)}
+                    className="text-xs text-blue-600 hover:underline"
+                  >
+                    {user.status === 'active' ? 'Disable' : 'Enable'}
+                  </button>
+                  {gatewayActions(user)}
+                </div>
               </td>
             </tr>
           ))}
