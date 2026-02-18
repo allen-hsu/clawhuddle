@@ -1,0 +1,9 @@
+node_modules
+.next
+dist
+.turbo
+data
+*.sqlite
+.env
+.git
+docs
