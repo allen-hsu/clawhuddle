@@ -17,6 +17,7 @@ services:
     environment:
       - NEXTAUTH_URL=https://clawhuddle.com
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - AUTH_TRUST_HOST=true
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - API_URL=http://api:4000
