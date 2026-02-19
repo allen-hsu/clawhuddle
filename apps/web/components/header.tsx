@@ -35,6 +35,9 @@ export function Header() {
           <NavLink href="/chat" active={pathname.startsWith('/chat')}>
             Chat
           </NavLink>
+          <NavLink href="/skills" active={pathname.startsWith('/skills')}>
+            Skills
+          </NavLink>
           {isAdmin && (
             <NavLink href="/admin" active={pathname.startsWith('/admin')}>
               Admin

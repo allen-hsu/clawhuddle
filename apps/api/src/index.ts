@@ -7,6 +7,7 @@ import { adminSkillRoutes } from './routes/admin/skills.js';
 import { adminApiKeyRoutes } from './routes/admin/api-keys.js';
 import { adminGatewayRoutes } from './routes/admin/gateways.js';
 import { chatRoutes } from './routes/chat.js';
+import { userSkillRoutes } from './routes/user/skills.js';
 
 const app = Fastify({ logger: true });
 
@@ -19,6 +20,7 @@ await app.register(adminSkillRoutes);
 await app.register(adminApiKeyRoutes);
 await app.register(adminGatewayRoutes);
 await app.register(chatRoutes);
+await app.register(userSkillRoutes);
 
 app.get('/api/health', async () => {
   return { status: 'ok', timestamp: new Date().toISOString() };

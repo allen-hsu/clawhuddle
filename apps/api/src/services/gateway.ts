@@ -5,6 +5,7 @@ import path from 'node:path';
 import { getDb } from '../db/index.js';
 import { getCompanyApiKey } from '../routes/admin/api-keys.js';
 import { generateOpenClawConfig } from './openclaw-config.js';
+import { installSkillsForUser } from './skill-installer.js';
 import type { Skill, User } from '@clawteam/shared';
 
 const docker = new Docker();
@@ -70,13 +71,16 @@ export async function provisionGateway(userId: string) {
   // Get user's skills
   const skills = getUserSkills(userId);
 
-  // Generate config with token auth
-  const config = generateOpenClawConfig({ port, token, skills });
+  // Generate config (skills are installed as directories, not in config)
+  const config = generateOpenClawConfig({ port, token });
 
   // Create workspace directory
   const gatewayDir = getGatewayDir(userId);
   fs.mkdirSync(gatewayDir, { recursive: true });
   fs.writeFileSync(path.join(gatewayDir, 'openclaw.json'), JSON.stringify(config, null, 2));
+
+  // Install skill directories
+  await installSkillsForUser(userId, skills);
 
   // Update DB with provisioning status + token
   db.prepare(
@@ -201,11 +205,14 @@ export async function redeployGateway(userId: string) {
     // Container may not exist
   }
 
-  // Update config (keep existing token, update skills)
+  // Update config (keep existing token; skills installed as directories)
   const skills = getUserSkills(userId);
-  const config = generateOpenClawConfig({ port: user.gateway_port, token: user.gateway_token, skills });
+  const config = generateOpenClawConfig({ port: user.gateway_port, token: user.gateway_token });
   const gatewayDir = getGatewayDir(userId);
   fs.writeFileSync(path.join(gatewayDir, 'openclaw.json'), JSON.stringify(config, null, 2));
+
+  // Install skill directories
+  await installSkillsForUser(userId, skills);
 
   // Create new container with updated env vars
   const container = await docker.createContainer({

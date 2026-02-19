@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { Skill } from '@clawteam/shared';
+import type { Skill, ScanRepoResult } from '@clawteam/shared';
 import { apiFetch } from '@/lib/api';
 
 interface Props {
@@ -46,39 +46,102 @@ function ActionBtn({ onClick, color = 'default', children }: { onClick: () => vo
   );
 }
 
+const inputStyle: React.CSSProperties = {
+  background: 'var(--bg-primary)',
+  border: '1px solid var(--border-primary)',
+  color: 'var(--text-primary)',
+};
+
 export function SkillTable({ initialSkills }: Props) {
   const [skills, setSkills] = useState(initialSkills);
-  const [name, setName] = useState('');
-  const [path, setPath] = useState('');
-  const [adding, setAdding] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [gitUrl, setGitUrl] = useState('');
+  const [scanning, setScanning] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [scannedSkills, setScannedSkills] = useState<ScanRepoResult[]>([]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [error, setError] = useState('');
 
   const refresh = async () => {
     const res = await apiFetch<{ data: Skill[] }>('/api/admin/skills');
     setSkills(res.data);
   };
 
-  const addSkill = async () => {
-    if (!name.trim() || !path.trim()) return;
-    setAdding(true);
+  const resetForm = () => {
+    setGitUrl('');
+    setScannedSkills([]);
+    setSelected(new Set());
+    setError('');
+    setScanning(false);
+    setImporting(false);
+  };
+
+  const scanRepo = async () => {
+    const trimmed = gitUrl.trim();
+    if (!trimmed) { setError('Git URL is required'); return; }
+    setScanning(true);
+    setError('');
+    setScannedSkills([]);
+    setSelected(new Set());
     try {
-      await apiFetch('/api/admin/skills', {
+      const res = await apiFetch<{ data: ScanRepoResult[] }>('/api/admin/skills/scan', {
         method: 'POST',
-        body: JSON.stringify({ name: name.trim(), path: path.trim() }),
+        body: JSON.stringify({ git_url: trimmed }),
       });
-      setName('');
-      setPath('');
+      if (res.data.length === 0) {
+        setError('No skills found (no directories containing SKILL.md)');
+      } else {
+        setScannedSkills(res.data);
+        setSelected(new Set(res.data.map((s) => s.git_path)));
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const importSelected = async () => {
+    if (selected.size === 0) return;
+    setImporting(true);
+    setError('');
+    try {
+      const toImport = scannedSkills.filter((s) => selected.has(s.git_path));
+      await apiFetch('/api/admin/skills/import', {
+        method: 'POST',
+        body: JSON.stringify({ git_url: gitUrl.trim(), skills: toImport }),
+      });
+      resetForm();
+      setShowForm(false);
       await refresh();
     } catch (err: any) {
-      alert(err.message);
+      setError(err.message);
     } finally {
-      setAdding(false);
+      setImporting(false);
     }
+  };
+
+  const toggleSelection = (gitPath: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(gitPath)) next.delete(gitPath);
+      else next.add(gitPath);
+      return next;
+    });
   };
 
   const toggleEnabled = async (skill: Skill) => {
     await apiFetch(`/api/admin/skills/${skill.id}`, {
       method: 'PATCH',
       body: JSON.stringify({ enabled: !skill.enabled }),
+    });
+    await refresh();
+  };
+
+  const changeType = async (skill: Skill, newType: string) => {
+    await apiFetch(`/api/admin/skills/${skill.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ type: newType }),
     });
     await refresh();
   };
@@ -97,34 +160,134 @@ export function SkillTable({ initialSkills }: Props) {
 
   return (
     <div>
-      {/* Add skill form */}
-      <div className="flex gap-2 mb-6">
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Skill name"
-          className="px-3 py-2 text-sm rounded-lg"
-        />
-        <input
-          value={path}
-          onChange={(e) => setPath(e.target.value)}
-          placeholder="Path (e.g. web-search)"
-          className="flex-1 max-w-sm px-3 py-2 text-sm rounded-lg"
-        />
+      {/* Import from Git */}
+      {!showForm ? (
         <button
-          onClick={addSkill}
-          disabled={adding}
-          className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50"
-          style={{
-            background: 'var(--accent)',
-            color: 'var(--text-inverse)',
-          }}
+          onClick={() => setShowForm(true)}
+          className="mb-6 px-4 py-2 rounded-lg text-sm font-medium transition-all"
+          style={{ background: 'var(--accent)', color: 'var(--text-inverse)' }}
           onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--accent-hover)'; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--accent)'; }}
         >
-          Add Skill
+          + Import from Git
         </button>
-      </div>
+      ) : (
+        <div
+          className="mb-6 p-4 rounded-xl"
+          style={{
+            background: 'var(--bg-primary)',
+            border: '1px solid var(--border-subtle)',
+          }}
+        >
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+              Import Skills from Git
+            </span>
+            <button
+              onClick={() => { setShowForm(false); resetForm(); }}
+              className="text-xs"
+              style={{ color: 'var(--text-tertiary)' }}
+            >
+              Cancel
+            </button>
+          </div>
+
+          {/* Step 1: Scan */}
+          <div className="flex gap-3 mb-3">
+            <div className="flex-1">
+              <label className="block text-[11px] font-medium mb-1 uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>
+                Repository URL
+              </label>
+              <input
+                value={gitUrl}
+                onChange={(e) => { setGitUrl(e.target.value); setError(''); }}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !scanning) scanRepo(); if (e.key === 'Escape') { setShowForm(false); resetForm(); } }}
+                placeholder="https://github.com/org/repo"
+                autoFocus
+                disabled={scanning}
+                className="w-full px-3 py-2 text-sm rounded-lg font-mono focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                style={inputStyle}
+              />
+            </div>
+            <div className="flex items-end">
+              <button
+                onClick={scanRepo}
+                disabled={scanning}
+                className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50"
+                style={{ background: 'var(--accent)', color: 'var(--text-inverse)' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--accent-hover)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--accent)'; }}
+              >
+                {scanning ? 'Scanning...' : 'Scan'}
+              </button>
+            </div>
+          </div>
+
+          {/* Step 2: Select & Import */}
+          {scannedSkills.length > 0 && (
+            <div className="mb-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+                  Found {scannedSkills.length} skill{scannedSkills.length !== 1 ? 's' : ''} — {selected.size} selected
+                </span>
+                <button
+                  onClick={() => {
+                    if (selected.size === scannedSkills.length) setSelected(new Set());
+                    else setSelected(new Set(scannedSkills.map((s) => s.git_path)));
+                  }}
+                  className="text-xs font-medium"
+                  style={{ color: 'var(--accent)' }}
+                >
+                  {selected.size === scannedSkills.length ? 'Deselect all' : 'Select all'}
+                </button>
+              </div>
+              <div
+                className="rounded-lg overflow-hidden divide-y"
+                style={{ border: '1px solid var(--border-primary)', borderColor: 'var(--border-primary)' }}
+              >
+                {scannedSkills.map((s) => (
+                  <label
+                    key={s.git_path}
+                    className="flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors"
+                    style={{ background: selected.has(s.git_path) ? 'var(--bg-hover)' : 'transparent' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = selected.has(s.git_path) ? 'var(--bg-hover)' : 'transparent'; }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selected.has(s.git_path)}
+                      onChange={() => toggleSelection(s.git_path)}
+                      className="rounded"
+                      style={{ accentColor: 'var(--accent)' }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{s.name}</div>
+                      <div className="text-xs font-mono truncate" style={{ color: 'var(--text-tertiary)' }}>{s.git_path}</div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <p className="text-xs mb-3" style={{ color: 'var(--red)' }}>{error}</p>
+          )}
+
+          {scannedSkills.length > 0 && (
+            <button
+              onClick={importSelected}
+              disabled={importing || selected.size === 0}
+              className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50"
+              style={{ background: 'var(--accent)', color: 'var(--text-inverse)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--accent-hover)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--accent)'; }}
+            >
+              {importing ? 'Importing...' : `Import ${selected.size} Skill${selected.size !== 1 ? 's' : ''}`}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Table */}
       <div
@@ -137,7 +300,7 @@ export function SkillTable({ initialSkills }: Props) {
         <table className="w-full text-sm">
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border-primary)' }}>
-              {['Name', 'Path', 'Type', 'Status', 'Actions'].map((h) => (
+              {['Name', 'Git URL', 'Git Path', 'Type', 'Status', 'Actions'].map((h) => (
                 <th
                   key={h}
                   className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider"
@@ -159,16 +322,34 @@ export function SkillTable({ initialSkills }: Props) {
                 onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
               >
-                <td className="px-4 py-3 font-medium" style={{ color: 'var(--text-primary)' }}>
-                  {skill.name}
+                <td className="px-4 py-3" style={{ color: 'var(--text-primary)' }}>
+                  <div className="font-medium">{skill.name}</div>
+                  {skill.description && (
+                    <div className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                      {skill.description}
+                    </div>
+                  )}
+                </td>
+                <td className="px-4 py-3 font-mono text-xs max-w-[200px] truncate" style={{ color: 'var(--text-secondary)' }} title={skill.git_url || ''}>
+                  {skill.git_url || '-'}
                 </td>
                 <td className="px-4 py-3 font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>
-                  {skill.path}
+                  {skill.git_path || skill.path}
                 </td>
                 <td className="px-4 py-3">
-                  <Badge color={typeColors[skill.type] || 'gray'}>
-                    {skill.type}
-                  </Badge>
+                  <select
+                    value={skill.type}
+                    onChange={(e) => changeType(skill, e.target.value)}
+                    className="text-[11px] font-medium rounded px-1.5 py-0.5 border-none cursor-pointer focus:outline-none"
+                    style={{
+                      background: typeColors[skill.type] === 'red' ? 'var(--red-muted)' : typeColors[skill.type] === 'blue' ? 'var(--blue-muted)' : 'var(--yellow-muted)',
+                      color: typeColors[skill.type] === 'red' ? 'var(--red)' : typeColors[skill.type] === 'blue' ? 'var(--blue)' : 'var(--yellow)',
+                    }}
+                  >
+                    <option value="optional">optional</option>
+                    <option value="mandatory">mandatory</option>
+                    <option value="restricted">restricted</option>
+                  </select>
                 </td>
                 <td className="px-4 py-3">
                   <Badge color={skill.enabled ? 'green' : 'gray'}>

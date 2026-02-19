@@ -26,6 +26,8 @@ export interface Skill {
   description: string | null;
   type: 'mandatory' | 'optional' | 'restricted';
   path: string;
+  git_url: string | null;
+  git_path: string | null;
   enabled: boolean;
   created_at: string;
 }
@@ -71,12 +73,30 @@ export interface CreateSkillRequest {
   name: string;
   description?: string;
   type?: 'mandatory' | 'optional' | 'restricted';
-  path: string;
+  path?: string;
+  git_url: string;
+  git_path: string;
 }
 
 export interface UpdateSkillRequest {
   type?: 'mandatory' | 'optional' | 'restricted';
   enabled?: boolean;
+  git_url?: string;
+  git_path?: string;
+}
+
+export interface ScanRepoRequest {
+  git_url: string;
+}
+
+export interface ScanRepoResult {
+  name: string;
+  git_path: string;
+}
+
+export interface ImportSkillsRequest {
+  git_url: string;
+  skills: { name: string; git_path: string }[];
 }
 
 export interface SetApiKeyRequest {

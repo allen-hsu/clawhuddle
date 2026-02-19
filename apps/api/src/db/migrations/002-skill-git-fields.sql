@@ -1,0 +1,2 @@
+ALTER TABLE skills ADD COLUMN git_url TEXT;
+ALTER TABLE skills ADD COLUMN git_path TEXT;

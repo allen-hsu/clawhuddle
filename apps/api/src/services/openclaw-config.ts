@@ -1,4 +1,24 @@
-import type { Skill } from '@clawteam/shared';
+// All available channel plugin IDs in OpenClaw
+const CHANNEL_PLUGINS = [
+  'telegram',
+  'whatsapp',
+  'discord',
+  'slack',
+  'signal',
+  'imessage',
+  'irc',
+  'googlechat',
+  'msteams',
+  'mattermost',
+  'nostr',
+  'matrix',
+  'line',
+  'feishu',
+  'twitch',
+  'tlon',
+  'zalo',
+  'zalouser',
+];
 
 export interface OpenClawConfig {
   meta: {
@@ -8,6 +28,7 @@ export interface OpenClawConfig {
   commands: {
     native: string;
     nativeSkills: string;
+    config: boolean;
   };
   gateway: {
     mode: string;
@@ -17,15 +38,23 @@ export interface OpenClawConfig {
       token: string;
     };
   };
-  skills?: Array<{ path: string }>;
+  plugins: {
+    entries: Record<string, { enabled: boolean }>;
+  };
 }
 
 export function generateOpenClawConfig(options: {
   port: number;
   token: string;
-  skills?: Skill[];
+  enabledChannels?: string[];
 }): OpenClawConfig {
-  const { port, token, skills } = options;
+  const { port, token } = options;
+  const channels = options.enabledChannels ?? CHANNEL_PLUGINS;
+
+  const pluginEntries: Record<string, { enabled: boolean }> = {};
+  for (const ch of channels) {
+    pluginEntries[ch] = { enabled: true };
+  }
 
   const config: OpenClawConfig = {
     meta: {
@@ -35,6 +64,7 @@ export function generateOpenClawConfig(options: {
     commands: {
       native: 'auto',
       nativeSkills: 'auto',
+      config: true,
     },
     gateway: {
       mode: 'local',
@@ -44,11 +74,10 @@ export function generateOpenClawConfig(options: {
         token,
       },
     },
+    plugins: {
+      entries: pluginEntries,
+    },
   };
-
-  if (skills && skills.length > 0) {
-    config.skills = skills.map((s) => ({ path: s.path }));
-  }
 
   return config;
 }
