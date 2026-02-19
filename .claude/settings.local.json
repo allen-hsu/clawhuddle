@@ -31,7 +31,14 @@
       "mcp__serena__get_symbols_overview",
       "mcp__serena__find_symbol",
       "WebFetch(domain:docs.openclaw.ai)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(git -C /Users/allenhsu/Documents/personal/clawteam log --oneline --all -30)",
+      "Bash(git -C /Users/allenhsu/Documents/personal/clawteam log --oneline --all -5 -- \"docker*\" \"Dockerfile*\")",
+      "Bash(git -C /Users/allenhsu/Documents/personal/clawteam show 4dfe878 --stat)",
+      "Bash(git -C /Users/allenhsu/Documents/personal/clawteam show 4dfe878)",
+      "Bash(git -C /Users/allenhsu/Documents/personal/clawteam show:*)",
+      "mcp__serena__initial_instructions",
+      "mcp__serena__list_memories"
     ]
   }
 }

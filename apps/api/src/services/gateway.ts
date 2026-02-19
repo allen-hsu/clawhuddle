@@ -6,26 +6,21 @@ import { getDb } from '../db/index.js';
 import { getOrgApiKey } from '../routes/org/api-keys.js';
 import { generateOpenClawConfig } from './openclaw-config.js';
 import { installSkillsForUser } from './skill-installer.js';
-import { regenerateNginxMap } from './nginx-map.js';
 import type { Skill, OrgMember } from '@clawhuddle/shared';
 
 const docker = new Docker();
 
 const GATEWAY_IMAGE = 'clawhuddle-gateway:local';
-const PORT_START = 6001;
+const GATEWAY_INTERNAL_PORT = 6100;
 const CONTAINER_PREFIX = 'clawhuddle-gw-';
+const DOCKER_NETWORK = process.env.DOCKER_NETWORK || 'clawhuddle-net';
+const DOMAIN = process.env.DOMAIN || 'localhost';
 
-function getGatewayHost(): string {
-  // In Docker, reach the host network via host.docker.internal or gateway IP
-  return process.env.GATEWAY_HOST || '127.0.0.1';
-}
-
-async function checkGatewayHealth(port: number): Promise<boolean> {
+async function checkGatewayHealth(containerName: string): Promise<boolean> {
   try {
-    const host = getGatewayHost();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 2000);
-    const res = await fetch(`http://${host}:${port}/`, { signal: controller.signal });
+    const res = await fetch(`http://${containerName}:${GATEWAY_INTERNAL_PORT}/`, { signal: controller.signal });
     clearTimeout(timeout);
     return res.ok || res.status === 401;
   } catch {
@@ -54,14 +49,6 @@ function getContainerName(orgId: string, userId: string): string {
   return `${CONTAINER_PREFIX}${orgId}-${userId}`;
 }
 
-function allocatePort(): number {
-  const db = getDb();
-  const row = db.prepare('SELECT MAX(gateway_port) as max_port FROM org_members').get() as {
-    max_port: number | null;
-  };
-  return (row.max_port || PORT_START - 1) + 1;
-}
-
 function generateSubdomain(): string {
   return crypto.randomBytes(4).toString('hex');
 }
@@ -88,6 +75,38 @@ function getMemberSkills(orgId: string, userId: string): Skill[] {
     .all(userId, orgId, orgId) as Skill[];
 }
 
+function createTraefikLabels(containerName: string, subdomain: string): Record<string, string> {
+  return {
+    'traefik.enable': 'true',
+    [`traefik.http.routers.${containerName}.rule`]: `Host(\`${subdomain}.${DOMAIN}\`)`,
+    [`traefik.http.routers.${containerName}.entrypoints`]: 'web',
+    [`traefik.http.services.${containerName}.loadbalancer.server.port`]: String(GATEWAY_INTERNAL_PORT),
+    // Strip proxy headers so OpenClaw sees a direct connection and auto-approves device pairing
+    [`traefik.http.middlewares.${containerName}-headers.headers.customrequestheaders.X-Forwarded-For`]: '',
+    [`traefik.http.middlewares.${containerName}-headers.headers.customrequestheaders.X-Real-IP`]: '',
+    [`traefik.http.middlewares.${containerName}-headers.headers.customrequestheaders.X-Forwarded-Proto`]: '',
+    [`traefik.http.routers.${containerName}.middlewares`]: `${containerName}-headers`,
+  };
+}
+
+function createContainerConfig(containerName: string, subdomain: string, anthropicApiKey: string, orgId: string, userId: string) {
+  return {
+    Image: GATEWAY_IMAGE,
+    name: containerName,
+    Env: [`ANTHROPIC_API_KEY=${anthropicApiKey}`],
+    Labels: createTraefikLabels(containerName, subdomain),
+    HostConfig: {
+      Binds: [`${getHostGatewayDir(orgId, userId)}:/root/.openclaw`],
+      RestartPolicy: { Name: 'unless-stopped' as const },
+    },
+    NetworkingConfig: {
+      EndpointsConfig: {
+        [DOCKER_NETWORK]: {},
+      },
+    },
+  };
+}
+
 export async function provisionGateway(orgId: string, memberId: string) {
   const db = getDb();
   const member = getMember(orgId, memberId);
@@ -98,8 +117,8 @@ export async function provisionGateway(orgId: string, memberId: string) {
   const anthropicApiKey = getOrgApiKey(orgId, 'anthropic');
   if (!anthropicApiKey) throw new Error('No Anthropic API key configured');
 
-  // Allocate port, generate token and subdomain
-  const port = allocatePort();
+  // Use fixed internal port, generate token and subdomain
+  const port = GATEWAY_INTERNAL_PORT;
   const token = crypto.randomBytes(24).toString('hex');
   const subdomain = generateSubdomain();
 
@@ -135,23 +154,14 @@ export async function provisionGateway(orgId: string, memberId: string) {
       // Container doesn't exist, that's fine
     }
 
-    const container = await docker.createContainer({
-      Image: GATEWAY_IMAGE,
-      name: containerName,
-      Env: [`ANTHROPIC_API_KEY=${anthropicApiKey}`],
-      HostConfig: {
-        NetworkMode: 'host',
-        Binds: [`${getHostGatewayDir(orgId, member.user_id)}:/root/.openclaw`],
-        RestartPolicy: { Name: 'unless-stopped' },
-      },
-    });
+    const container = await docker.createContainer(
+      createContainerConfig(containerName, subdomain, anthropicApiKey, orgId, member.user_id)
+    );
 
     await container.start();
 
     // Mark as deploying — getGatewayStatus will promote to running after health check
     db.prepare('UPDATE org_members SET gateway_status = ? WHERE id = ?').run('deploying', memberId);
-
-    await regenerateNginxMap();
 
     return { memberId, userId: member.user_id, gateway_port: port, gateway_status: 'deploying' as const, gateway_subdomain: subdomain };
   } catch (err) {
@@ -216,15 +226,13 @@ export async function removeGateway(orgId: string, memberId: string) {
     'UPDATE org_members SET gateway_port = NULL, gateway_status = NULL, gateway_token = NULL, gateway_subdomain = NULL WHERE id = ?'
   ).run(memberId);
 
-  await regenerateNginxMap();
-
   return { memberId, userId: member.user_id, gateway_port: null, gateway_status: null, gateway_subdomain: null };
 }
 
 export async function redeployGateway(orgId: string, memberId: string) {
   const db = getDb();
   const member = getMember(orgId, memberId);
-  if (!member.gateway_port || !member.gateway_token) throw new Error('No gateway deployed');
+  if (!member.gateway_port || !member.gateway_token || !member.gateway_subdomain) throw new Error('No gateway deployed');
 
   const anthropicApiKey = getOrgApiKey(orgId, 'anthropic');
   if (!anthropicApiKey) throw new Error('No Anthropic API key configured');
@@ -242,7 +250,7 @@ export async function redeployGateway(orgId: string, memberId: string) {
 
   // Update config (keep existing token; skills installed as directories)
   const skills = getMemberSkills(orgId, member.user_id);
-  const config = generateOpenClawConfig({ port: member.gateway_port, token: member.gateway_token });
+  const config = generateOpenClawConfig({ port: GATEWAY_INTERNAL_PORT, token: member.gateway_token });
   const gatewayDir = getGatewayDir(orgId, member.user_id);
   fs.writeFileSync(path.join(gatewayDir, 'openclaw.json'), JSON.stringify(config, null, 2));
 
@@ -250,21 +258,12 @@ export async function redeployGateway(orgId: string, memberId: string) {
   await installSkillsForUser(path.join(orgId, member.user_id), skills);
 
   // Create new container with updated env vars
-  const container = await docker.createContainer({
-    Image: GATEWAY_IMAGE,
-    name: containerName,
-    Env: [`ANTHROPIC_API_KEY=${anthropicApiKey}`],
-    HostConfig: {
-      NetworkMode: 'host',
-      Binds: [`${gatewayDir}:/root/.openclaw`],
-      RestartPolicy: { Name: 'unless-stopped' },
-    },
-  });
+  const container = await docker.createContainer(
+    createContainerConfig(containerName, member.gateway_subdomain, anthropicApiKey, orgId, member.user_id)
+  );
 
   await container.start();
   db.prepare('UPDATE org_members SET gateway_status = ? WHERE id = ?').run('deploying', memberId);
-
-  await regenerateNginxMap();
 
   return { memberId, userId: member.user_id, gateway_port: member.gateway_port, gateway_status: 'deploying' as const };
 }
@@ -290,7 +289,7 @@ export async function getGatewayStatus(orgId: string, memberId: string) {
     }
 
     // Container is running — check if gateway HTTP is actually ready
-    const healthy = await checkGatewayHealth(member.gateway_port);
+    const healthy = await checkGatewayHealth(containerName);
     const actualStatus = healthy ? 'running' : 'deploying';
 
     if (actualStatus !== member.gateway_status) {

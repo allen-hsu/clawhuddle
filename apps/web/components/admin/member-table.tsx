@@ -186,13 +186,9 @@ export function MemberTable({ initialMembers, tier = 'free' }: Props) {
   };
 
   const openGateway = (member: OrgMember) => {
-    if (member.gateway_subdomain) {
-      const base = window.location.hostname;
-      window.open(`https://${member.gateway_subdomain}.${base}/?token=${member.gateway_token}`, '_blank');
-    } else {
-      const hostname = window.location.hostname;
-      window.open(`http://${hostname}:${member.gateway_port}/?token=${member.gateway_token}`, '_blank');
-    }
+    if (!member.gateway_subdomain || !member.gateway_token) return;
+    const { protocol, hostname } = window.location;
+    window.open(`${protocol}//${member.gateway_subdomain}.${hostname}/?token=${member.gateway_token}`, '_blank');
   };
 
   const gatewayStatusBadge = (member: OrgMember) => {
@@ -398,14 +394,6 @@ export function MemberTable({ initialMembers, tier = 'free' }: Props) {
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     {gatewayStatusBadge(member)}
-                    {member.gateway_port && (
-                      <span
-                        className="text-xs font-mono"
-                        style={{ color: 'var(--text-tertiary)' }}
-                      >
-                        :{member.gateway_port}
-                      </span>
-                    )}
                   </div>
                 </td>
                 <td className="px-4 py-3">

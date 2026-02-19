@@ -14,12 +14,10 @@ import { orgUserSkillRoutes } from './routes/org/user-skills.js';
 import { orgChatRoutes } from './routes/org/chat.js';
 import { superAdminRoutes } from './routes/super-admin.js';
 import { getDb } from './db/index.js';
-import { ensureNginxMapFile, regenerateNginxMap } from './services/nginx-map.js';
 
 const app = Fastify({ logger: true });
 
-// Ensure nginx map file exists and backfill subdomains for existing gateways
-ensureNginxMapFile();
+// Backfill subdomains for existing gateways that don't have one
 {
   const db = getDb();
   const rows = db.prepare(
@@ -32,7 +30,6 @@ ensureNginxMapFile();
     }
     console.log(`Backfilled gateway_subdomain for ${rows.length} members`);
   }
-  await regenerateNginxMap();
 }
 
 await app.register(cors, { origin: true, credentials: true });
