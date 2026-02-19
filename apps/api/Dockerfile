@@ -16,6 +16,9 @@ WORKDIR /app
 COPY --from=builder /app/apps/api/dist ./dist
 COPY --from=builder /app/apps/api/package.json ./
 COPY --from=builder /app/apps/api/src/db/schema.sql ./dist/db/schema.sql
+COPY --from=builder /app/apps/api/src/db/migrations ./dist/db/migrations
 COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
+COPY --from=builder /app/packages/shared/package.json ./packages/shared/package.json
 EXPOSE 4000
 CMD ["sh", "-c", "node dist/db/migrate.js && node dist/index.js"]
