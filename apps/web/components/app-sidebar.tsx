@@ -132,7 +132,7 @@ export function AppSidebar() {
         style={{ borderBottom: '1px solid var(--border-subtle)' }}
       >
         <Link
-          href="/"
+          href="/home"
           className="flex items-center gap-2 font-semibold text-[15px] tracking-tight mb-3"
           style={{ color: 'var(--accent)' }}
         >
@@ -153,7 +153,7 @@ export function AppSidebar() {
             {/* General */}
             <SectionLabel>General</SectionLabel>
             <div className="space-y-0.5">
-              <NavItem href="/" icon={icons.home} label="Home" active={pathname === '/'} />
+              <NavItem href="/home" icon={icons.home} label="Home" active={pathname === '/home'} />
               <NavItem href="/skills" icon={icons.skills} label="My Skills" active={pathname.startsWith('/skills')} />
             </div>
 

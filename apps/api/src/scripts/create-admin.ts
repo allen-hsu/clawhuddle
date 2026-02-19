@@ -1,6 +1,7 @@
 import { getDb, closeDb } from '../db/index.js';
 import { v4 as uuid } from 'uuid';
-import 'dotenv/config';
+import dotenv from 'dotenv';
+dotenv.config({ path: '../../.env' });
 
 const email = process.argv[2];
 if (!email) {

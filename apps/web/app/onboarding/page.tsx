@@ -6,6 +6,6 @@ import { useRouter } from 'next/navigation';
 // Legacy redirect — org creation is now handled on the dashboard
 export default function OnboardingPage() {
   const router = useRouter();
-  useEffect(() => { router.replace('/'); }, [router]);
+  useEffect(() => { router.replace('/home'); }, [router]);
   return null;
 }

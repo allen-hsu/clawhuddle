@@ -9,7 +9,7 @@ export default function LoginPage() {
 
   const handleDevLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    await signIn('credentials', { email, callbackUrl: '/' });
+    await signIn('credentials', { email, callbackUrl: '/home' });
   };
 
   return (
@@ -57,7 +57,7 @@ export default function LoginPage() {
 
         {/* Google Login */}
         <button
-          onClick={() => signIn('google', { callbackUrl: '/' })}
+          onClick={() => signIn('google', { callbackUrl: '/home' })}
           className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors"
           style={{
             background: 'var(--bg-secondary)',

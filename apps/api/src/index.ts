@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
-import 'dotenv/config';
+import dotenv from 'dotenv';
+dotenv.config({ path: '../../.env' });
 import { authRoutes } from './routes/auth.js';
 import { orgRoutes } from './routes/orgs.js';
 import { orgPlugin } from './middleware/auth.js';

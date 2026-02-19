@@ -12,7 +12,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   useEffect(() => {
     if (loading) return;
     if (!isAdmin) {
-      router.replace('/');
+      router.replace('/home');
     }
   }, [isAdmin, loading, router]);
 

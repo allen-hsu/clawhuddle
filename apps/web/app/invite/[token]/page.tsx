@@ -49,7 +49,7 @@ export default function InvitePage() {
         body: JSON.stringify({ token }),
       });
       await refreshOrgs();
-      router.push('/');
+      router.push('/home');
     } catch (err: any) {
       if (err.message === 'User not found') {
         setError('Session expired. Please sign in again.');
