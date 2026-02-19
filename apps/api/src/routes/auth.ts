@@ -19,12 +19,10 @@ export async function authRoutes(app: FastifyInstance) {
       if (!user) {
         // Auto-create user on first login
         const id = uuid();
-        const isFirstUser = db.prepare('SELECT COUNT(*) as count FROM users').get() as any;
-        const role = isFirstUser.count === 0 ? 'admin' : 'member';
 
         db.prepare(
-          'INSERT INTO users (id, email, name, role, avatar_url) VALUES (?, ?, ?, ?, ?)'
-        ).run(id, email, name || null, role, avatar_url || null);
+          'INSERT INTO users (id, email, name, avatar_url) VALUES (?, ?, ?, ?)'
+        ).run(id, email, name || null, avatar_url || null);
 
         user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
       } else {
