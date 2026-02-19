@@ -12,6 +12,7 @@ COPY apps/api/ apps/api/
 RUN npm run build -w packages/shared && npm run build -w apps/api
 
 FROM node:22-alpine
+RUN apk add --no-cache git
 WORKDIR /app
 COPY --from=builder /app/apps/api/dist ./dist
 COPY --from=builder /app/apps/api/package.json ./
