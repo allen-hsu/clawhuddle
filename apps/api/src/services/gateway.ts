@@ -46,7 +46,8 @@ function getHostGatewayDir(orgId: string, userId: string): string {
 }
 
 function getContainerName(orgId: string, userId: string): string {
-  return `${CONTAINER_PREFIX}${orgId}-${userId}`;
+  // Keep under 63 chars for Docker DNS resolution
+  return `${CONTAINER_PREFIX}${orgId.slice(0, 8)}-${userId.slice(0, 8)}`;
 }
 
 function generateSubdomain(): string {
