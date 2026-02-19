@@ -1,15 +1,15 @@
 services:
   traefik:
     image: traefik:v3.3
+    environment:
+      - DOCKER_API_VERSION=1.45
     command:
-      - "--api.insecure=true"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--providers.docker.network=clawhuddle-net"
       - "--entrypoints.web.address=:80"
     ports:
       - "8080:80"
-      - "8081:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
