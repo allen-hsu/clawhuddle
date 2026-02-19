@@ -1,7 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { apiFetch } from '@/lib/api';
+import { useToast } from '@/components/ui/toast';
+
+type FetchFn = <T>(path: string, options?: RequestInit) => Promise<T>;
 
 interface ApiKeyDisplay {
   id: string;
@@ -12,16 +14,18 @@ interface ApiKeyDisplay {
 
 interface Props {
   initialKeys: ApiKeyDisplay[];
+  fetchFn: FetchFn;
 }
 
-export function ApiKeyForm({ initialKeys }: Props) {
+export function ApiKeyForm({ initialKeys, fetchFn }: Props) {
+  const { toast } = useToast();
   const [keys, setKeys] = useState(initialKeys);
   const [anthropicKey, setAnthropicKey] = useState('');
   const [openaiKey, setOpenaiKey] = useState('');
   const [saving, setSaving] = useState(false);
 
   const refresh = async () => {
-    const res = await apiFetch<{ data: ApiKeyDisplay[] }>('/api/admin/api-keys');
+    const res = await fetchFn<{ data: ApiKeyDisplay[] }>('/api-keys');
     setKeys(res.data);
   };
 
@@ -29,14 +33,15 @@ export function ApiKeyForm({ initialKeys }: Props) {
     if (!key.trim()) return;
     setSaving(true);
     try {
-      await apiFetch('/api/admin/api-keys', {
+      await fetchFn('/api-keys', {
         method: 'POST',
         body: JSON.stringify({ provider, key: key.trim() }),
       });
       clearFn('');
       await refresh();
+      toast(`${provider.charAt(0).toUpperCase() + provider.slice(1)} key saved`, 'success');
     } catch (err: any) {
-      alert(err.message);
+      toast(err.message, 'error');
     } finally {
       setSaving(false);
     }

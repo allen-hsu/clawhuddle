@@ -54,6 +54,39 @@ export async function authRoutes(app: FastifyInstance) {
     }
   );
 
+  // View invitation details (public — no auth needed so invitees can see before signing in)
+  app.get<{ Params: { token: string } }>('/api/invitations/:token', async (request, reply) => {
+    const { token } = request.params;
+    const db = getDb();
+
+    const invitation = db.prepare(
+      `SELECT i.*, o.name as org_name, u.name as invited_by_name
+       FROM invitations i
+       JOIN organizations o ON o.id = i.org_id
+       JOIN users u ON u.id = i.invited_by
+       WHERE i.token = ? AND i.status = 'pending'`
+    ).get(token) as any;
+
+    if (!invitation) {
+      return reply.status(404).send({ error: 'not_found', message: 'Invitation not found' });
+    }
+
+    if (new Date(invitation.expires_at) < new Date()) {
+      return reply.status(410).send({ error: 'expired', message: 'Invitation has expired' });
+    }
+
+    return {
+      data: {
+        id: invitation.id,
+        org_name: invitation.org_name,
+        email: invitation.email,
+        role: invitation.role,
+        invited_by_name: invitation.invited_by_name,
+        expires_at: invitation.expires_at,
+      },
+    };
+  });
+
   // Get current user info + org list
   app.get('/api/auth/me', async (request, reply) => {
     const userId = request.headers['x-user-id'] as string;

@@ -25,7 +25,13 @@ export function MessageInput({ onSend, disabled }: Props) {
   };
 
   return (
-    <div className="border-t border-gray-200 p-4 bg-white">
+    <div
+      className="p-4"
+      style={{
+        borderTop: '1px solid var(--border-subtle)',
+        background: 'var(--bg-primary)',
+      }}
+    >
       <div className="flex gap-2 items-end max-w-3xl mx-auto">
         <textarea
           value={input}
@@ -34,12 +40,36 @@ export function MessageInput({ onSend, disabled }: Props) {
           placeholder="Type a message..."
           rows={1}
           disabled={disabled}
-          className="flex-1 resize-none rounded-xl border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+          className="flex-1 resize-none rounded-xl px-4 py-2.5 text-sm focus:outline-none disabled:opacity-50"
+          style={{
+            background: 'var(--bg-input)',
+            border: '1px solid var(--border-primary)',
+            color: 'var(--text-primary)',
+            transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
+          }}
+          onFocus={(e) => {
+            e.currentTarget.style.borderColor = 'var(--border-focus)';
+            e.currentTarget.style.boxShadow = '0 0 0 3px var(--accent-muted)';
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.borderColor = 'var(--border-primary)';
+            e.currentTarget.style.boxShadow = 'none';
+          }}
         />
         <button
           onClick={handleSend}
           disabled={disabled || !input.trim()}
-          className="px-4 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+          className="px-4 py-2.5 rounded-xl text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+          style={{
+            background: 'var(--accent)',
+            color: 'var(--text-inverse)',
+          }}
+          onMouseEnter={(e) => {
+            if (!e.currentTarget.disabled) e.currentTarget.style.background = 'var(--accent-hover)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'var(--accent)';
+          }}
         >
           Send
         </button>

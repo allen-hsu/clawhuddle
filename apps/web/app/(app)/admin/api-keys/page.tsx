@@ -1,28 +1,23 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
-import { useOrg } from '@/lib/org-context';
-import { createOrgFetch } from '@/lib/api';
+import { useOrgFetch } from '@/lib/use-org-fetch';
 import { ApiKeyForm } from '@/components/admin/api-key-form';
 
 export default function ApiKeysPage() {
-  const { data: session } = useSession();
-  const { currentOrgId } = useOrg();
-  const userId = (session?.user as any)?.id;
+  const { orgFetch, ready } = useOrgFetch();
   const [keys, setKeys] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!currentOrgId || !userId) return;
-    const orgFetch = createOrgFetch(currentOrgId, userId);
+    if (!orgFetch) return;
     orgFetch<{ data: any[] }>('/api-keys')
       .then((res) => setKeys(res.data))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [currentOrgId, userId]);
+  }, [orgFetch]);
 
-  if (loading) {
+  if (loading || !ready) {
     return (
       <div>
         <h1 className="text-xl font-semibold tracking-tight mb-6" style={{ color: 'var(--text-primary)' }}>
@@ -38,7 +33,7 @@ export default function ApiKeysPage() {
       <h1 className="text-xl font-semibold tracking-tight mb-6" style={{ color: 'var(--text-primary)' }}>
         API Keys
       </h1>
-      <ApiKeyForm initialKeys={keys} />
+      <ApiKeyForm initialKeys={keys} fetchFn={orgFetch!} />
     </div>
   );
 }

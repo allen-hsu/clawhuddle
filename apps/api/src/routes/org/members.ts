@@ -3,6 +3,7 @@ import { getDb } from '../../db/index.js';
 import { v4 as uuid } from 'uuid';
 import crypto from 'node:crypto';
 import { requireRole } from '../../middleware/auth.js';
+import { sendInvitationEmail } from '../../services/email.js';
 import type { InviteMemberRequest, UpdateMemberRequest } from '@clawteam/shared';
 
 export async function orgMemberRoutes(app: FastifyInstance) {
@@ -56,9 +57,22 @@ export async function orgMemberRoutes(app: FastifyInstance) {
       const token = crypto.randomBytes(32).toString('hex');
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
 
+      const memberRole = role || 'member';
       db.prepare(
         'INSERT INTO invitations (id, org_id, email, role, token, invited_by, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-      ).run(id, request.orgId!, email, role || 'member', token, request.currentUser!.id, expiresAt);
+      ).run(id, request.orgId!, email, memberRole, token, request.currentUser!.id, expiresAt);
+
+      // Send invitation email (non-blocking — don't fail the API if email fails)
+      const org = db.prepare('SELECT name FROM organizations WHERE id = ?').get(request.orgId!) as any;
+      sendInvitationEmail({
+        to: email,
+        orgName: org?.name || 'your team',
+        invitedByName: request.currentUser!.name || request.currentUser!.email,
+        role: memberRole,
+        token,
+      }).catch((err) => {
+        console.error('[email] Failed to send invitation:', err);
+      });
 
       const invitation = db.prepare('SELECT * FROM invitations WHERE id = ?').get(id);
       return reply.status(201).send({ data: invitation });

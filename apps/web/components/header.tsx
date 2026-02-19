@@ -11,7 +11,6 @@ export function Header() {
   const pathname = usePathname();
   const { currentOrgId, memberRole } = useOrg();
   const isAdmin = memberRole === 'admin' || memberRole === 'owner';
-  const orgBase = currentOrgId ? `/org/${currentOrgId}` : '';
 
   return (
     <header
@@ -23,7 +22,7 @@ export function Header() {
     >
       <div className="flex items-center gap-4">
         <Link
-          href={orgBase ? `${orgBase}/chat` : '/'}
+          href="/"
           className="flex items-center gap-2 font-semibold text-[15px] tracking-tight"
           style={{ color: 'var(--accent)' }}
         >
@@ -37,20 +36,20 @@ export function Header() {
 
         <OrgSwitcher />
 
-        {orgBase && (
+        {currentOrgId && (
           <nav className="flex items-center gap-1">
-            <NavLink href={`${orgBase}/chat`} active={pathname.startsWith(`${orgBase}/chat`)}>
-              Chat
+            <NavLink href="/" active={pathname === '/'}>
+              Dashboard
             </NavLink>
-            <NavLink href={`${orgBase}/skills`} active={pathname.startsWith(`${orgBase}/skills`)}>
+            <NavLink href="/skills" active={pathname.startsWith('/skills')}>
               Skills
             </NavLink>
             {isAdmin && (
-              <NavLink href={`${orgBase}/admin`} active={pathname.startsWith(`${orgBase}/admin`)}>
+              <NavLink href="/admin" active={pathname.startsWith('/admin')}>
                 Admin
               </NavLink>
             )}
-            <NavLink href={`${orgBase}/settings`} active={pathname.startsWith(`${orgBase}/settings`)}>
+            <NavLink href="/settings" active={pathname.startsWith('/settings')}>
               Settings
             </NavLink>
           </nav>

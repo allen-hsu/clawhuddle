@@ -6,11 +6,18 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div
-        className={`max-w-[70%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${
+        className="max-w-[70%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap"
+        style={
           isUser
-            ? 'bg-blue-600 text-white'
-            : 'bg-gray-100 text-gray-900'
-        }`}
+            ? {
+                background: 'var(--accent)',
+                color: 'var(--text-inverse)',
+              }
+            : {
+                background: 'var(--bg-tertiary)',
+                color: 'var(--text-primary)',
+              }
+        }
       >
         {message.content}
       </div>

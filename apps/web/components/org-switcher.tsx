@@ -1,12 +1,10 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { useOrg } from '@/lib/org-context';
 
 export function OrgSwitcher() {
   const { orgs, currentOrg, switchOrg } = useOrg();
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -60,10 +58,6 @@ export function OrgSwitcher() {
               onClick={() => {
                 switchOrg(org.id);
                 setOpen(false);
-                // Navigate to same section in new org
-                const path = window.location.pathname;
-                const section = path.split('/').slice(3).join('/') || 'admin';
-                router.push(`/org/${org.id}/${section}`);
               }}
               className="w-full text-left px-3 py-2 text-xs transition-colors flex items-center justify-between"
               style={{

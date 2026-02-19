@@ -1,53 +1,48 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
-import { apiFetch } from '@/lib/api';
-import { Header } from '@/components/header';
+import { useState, useEffect, useCallback } from 'react';
+import { useOrgFetch } from '@/lib/use-org-fetch';
+import { useToast } from '@/components/ui/toast';
 import type { Skill } from '@clawteam/shared';
 
 interface SkillWithStatus extends Skill {
   assigned: boolean;
 }
 
-export default function SkillsPage() {
-  const { data: session } = useSession();
+export default function UserSkillsPage() {
+  const { orgFetch, ready } = useOrgFetch();
+  const { toast } = useToast();
   const [skills, setSkills] = useState<SkillWithStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState<string | null>(null);
 
-  const userId = (session?.user as any)?.id;
-
-  const fetchSkills = async () => {
-    if (!userId) return;
+  const fetchSkills = useCallback(async () => {
+    if (!orgFetch) return;
     try {
-      const res = await apiFetch<{ data: SkillWithStatus[] }>('/api/me/skills', {
-        headers: { 'x-user-id': userId },
-      });
+      const res = await orgFetch<{ data: SkillWithStatus[] }>('/me/skills');
       setSkills(res.data);
     } catch {
       // ignore
     } finally {
       setLoading(false);
     }
-  };
+  }, [orgFetch]);
 
   useEffect(() => {
     fetchSkills();
-  }, [userId]);
+  }, [fetchSkills]);
 
   const toggle = async (skill: SkillWithStatus) => {
-    if (skill.type === 'mandatory') return;
+    if (!orgFetch || skill.type === 'mandatory') return;
     setToggling(skill.id);
     try {
-      await apiFetch(`/api/me/skills/${skill.id}`, {
+      await orgFetch(`/me/skills/${skill.id}`, {
         method: 'POST',
-        headers: { 'x-user-id': userId },
         body: JSON.stringify({ enabled: !skill.assigned }),
       });
       await fetchSkills();
     } catch (err: any) {
-      alert(err.message);
+      toast(err.message, 'error');
     } finally {
       setToggling(null);
     }
@@ -60,10 +55,8 @@ export default function SkillsPage() {
   };
 
   return (
-    <div className="h-screen flex flex-col" style={{ background: 'var(--bg-base)' }}>
-      <Header />
-      <main className="flex-1 overflow-y-auto">
-        <div className="max-w-2xl mx-auto px-6 py-8">
+    <main className="flex-1 overflow-y-auto">
+      <div className="max-w-2xl mx-auto px-6 py-8">
           <h1
             className="text-xl font-semibold tracking-tight mb-1"
             style={{ color: 'var(--text-primary)' }}
@@ -74,7 +67,7 @@ export default function SkillsPage() {
             Choose which skills to enable for your AI assistant. Changes are applied automatically.
           </p>
 
-          {loading ? (
+          {loading || !ready ? (
             <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Loading...</p>
           ) : skills.length === 0 ? (
             <div
@@ -103,7 +96,6 @@ export default function SkillsPage() {
                     onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--border-primary)'; }}
                     onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; }}
                   >
-                    {/* Toggle */}
                     <button
                       onClick={() => toggle(skill)}
                       disabled={isMandatory || isToggling}
@@ -123,7 +115,6 @@ export default function SkillsPage() {
                       />
                     </button>
 
-                    {/* Info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
@@ -148,7 +139,6 @@ export default function SkillsPage() {
                       )}
                     </div>
 
-                    {/* Status */}
                     {isToggling && (
                       <span className="text-xs animate-pulse" style={{ color: 'var(--text-tertiary)' }}>
                         saving...
@@ -159,8 +149,7 @@ export default function SkillsPage() {
               })}
             </div>
           )}
-        </div>
-      </main>
-    </div>
+      </div>
+    </main>
   );
 }

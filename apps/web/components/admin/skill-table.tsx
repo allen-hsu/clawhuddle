@@ -2,10 +2,14 @@
 
 import { useState } from 'react';
 import type { Skill, ScanRepoResult } from '@clawteam/shared';
-import { apiFetch } from '@/lib/api';
+import { useToast } from '@/components/ui/toast';
+import { useConfirm } from '@/components/ui/confirm-dialog';
+
+type FetchFn = <T>(path: string, options?: RequestInit) => Promise<T>;
 
 interface Props {
   initialSkills: Skill[];
+  fetchFn: FetchFn;
 }
 
 function Badge({ color, children }: { color: 'green' | 'red' | 'yellow' | 'blue' | 'gray'; children: React.ReactNode }) {
@@ -52,7 +56,9 @@ const inputStyle: React.CSSProperties = {
   color: 'var(--text-primary)',
 };
 
-export function SkillTable({ initialSkills }: Props) {
+export function SkillTable({ initialSkills, fetchFn }: Props) {
+  const { toast } = useToast();
+  const { confirm } = useConfirm();
   const [skills, setSkills] = useState(initialSkills);
   const [showForm, setShowForm] = useState(false);
   const [gitUrl, setGitUrl] = useState('');
@@ -63,7 +69,7 @@ export function SkillTable({ initialSkills }: Props) {
   const [error, setError] = useState('');
 
   const refresh = async () => {
-    const res = await apiFetch<{ data: Skill[] }>('/api/admin/skills');
+    const res = await fetchFn<{ data: Skill[] }>('/skills');
     setSkills(res.data);
   };
 
@@ -84,7 +90,7 @@ export function SkillTable({ initialSkills }: Props) {
     setScannedSkills([]);
     setSelected(new Set());
     try {
-      const res = await apiFetch<{ data: ScanRepoResult[] }>('/api/admin/skills/scan', {
+      const res = await fetchFn<{ data: ScanRepoResult[] }>('/skills/scan', {
         method: 'POST',
         body: JSON.stringify({ git_url: trimmed }),
       });
@@ -107,13 +113,14 @@ export function SkillTable({ initialSkills }: Props) {
     setError('');
     try {
       const toImport = scannedSkills.filter((s) => selected.has(s.git_path));
-      await apiFetch('/api/admin/skills/import', {
+      await fetchFn('/skills/import', {
         method: 'POST',
         body: JSON.stringify({ git_url: gitUrl.trim(), skills: toImport }),
       });
       resetForm();
       setShowForm(false);
       await refresh();
+      toast(`Imported ${toImport.length} skill${toImport.length !== 1 ? 's' : ''}`, 'success');
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -131,7 +138,7 @@ export function SkillTable({ initialSkills }: Props) {
   };
 
   const toggleEnabled = async (skill: Skill) => {
-    await apiFetch(`/api/admin/skills/${skill.id}`, {
+    await fetchFn(`/skills/${skill.id}`, {
       method: 'PATCH',
       body: JSON.stringify({ enabled: !skill.enabled }),
     });
@@ -139,7 +146,7 @@ export function SkillTable({ initialSkills }: Props) {
   };
 
   const changeType = async (skill: Skill, newType: string) => {
-    await apiFetch(`/api/admin/skills/${skill.id}`, {
+    await fetchFn(`/skills/${skill.id}`, {
       method: 'PATCH',
       body: JSON.stringify({ type: newType }),
     });
@@ -147,8 +154,14 @@ export function SkillTable({ initialSkills }: Props) {
   };
 
   const deleteSkill = async (skill: Skill) => {
-    if (!confirm(`Delete skill "${skill.name}"?`)) return;
-    await apiFetch(`/api/admin/skills/${skill.id}`, { method: 'DELETE' });
+    const ok = await confirm({
+      title: `Delete "${skill.name}"?`,
+      description: 'This will remove the skill from all members. This action cannot be undone.',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
+    await fetchFn(`/skills/${skill.id}`, { method: 'DELETE' });
     await refresh();
   };
 

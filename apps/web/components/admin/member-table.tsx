@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useOrg } from '@/lib/org-context';
 import { createOrgFetch } from '@/lib/api';
+import { useToast } from '@/components/ui/toast';
 import type { OrgMember } from '@clawteam/shared';
 
 function Badge({ color, children }: { color: 'green' | 'red' | 'yellow' | 'blue' | 'purple' | 'gray'; children: React.ReactNode }) {
@@ -53,6 +54,7 @@ interface Props {
 export function MemberTable({ initialMembers }: Props) {
   const { data: session } = useSession();
   const { currentOrgId } = useOrg();
+  const { toast } = useToast();
   const userId = (session?.user as any)?.id;
   const [members, setMembers] = useState(initialMembers);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -99,19 +101,22 @@ export function MemberTable({ initialMembers }: Props) {
     };
   }, [hasDeploying, members, orgFetch, refresh]);
 
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
+
   const invite = async () => {
     if (!inviteEmail.trim()) return;
     setInviting(true);
+    setInviteLink(null);
     try {
-      await orgFetch('/members/invite', {
+      const res = await orgFetch<{ data: { token: string } }>('/members/invite', {
         method: 'POST',
         body: JSON.stringify({ email: inviteEmail.trim() }),
       });
+      const link = `${window.location.origin}/invite/${res.data.token}`;
+      setInviteLink(link);
       setInviteEmail('');
-      // Show success feedback
-      alert('Invitation sent! Share the invitation link from the Invitations page.');
     } catch (err: any) {
-      alert(err.message);
+      toast(err.message, 'error');
     } finally {
       setInviting(false);
     }
@@ -148,7 +153,7 @@ export function MemberTable({ initialMembers }: Props) {
       }
       await refresh();
     } catch (err: any) {
-      alert(err.message);
+      toast(err.message, 'error');
     } finally {
       setLoadingGateway(null);
     }
@@ -246,6 +251,35 @@ export function MemberTable({ initialMembers }: Props) {
           Invite Member
         </button>
       </div>
+
+      {/* Invite link */}
+      {inviteLink && (
+        <div
+          className="flex items-center gap-2 mb-6 px-4 py-3 rounded-lg text-sm"
+          style={{ background: 'var(--green-muted)', border: '1px solid rgba(74, 199, 120, 0.2)' }}
+        >
+          <span className="flex-1 font-mono text-xs truncate" style={{ color: 'var(--text-primary)' }}>
+            {inviteLink}
+          </span>
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(inviteLink);
+              toast('Link copied to clipboard', 'success');
+            }}
+            className="shrink-0 text-xs font-medium px-3 py-1 rounded-md transition-colors"
+            style={{ color: 'var(--green)', background: 'rgba(74, 199, 120, 0.15)' }}
+          >
+            Copy
+          </button>
+          <button
+            onClick={() => setInviteLink(null)}
+            className="shrink-0 text-xs px-1"
+            style={{ color: 'var(--text-tertiary)' }}
+          >
+            &times;
+          </button>
+        </div>
+      )}
 
       {/* Table */}
       <div
