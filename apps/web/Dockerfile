@@ -1,6 +1,8 @@
 # Build context: repo root (set via docker-compose)
 FROM node:22-alpine AS builder
 WORKDIR /app
+ARG NEXT_PUBLIC_GATEWAY_DOMAIN
+ENV NEXT_PUBLIC_GATEWAY_DOMAIN=$NEXT_PUBLIC_GATEWAY_DOMAIN
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
 COPY apps/web/package.json apps/web/
