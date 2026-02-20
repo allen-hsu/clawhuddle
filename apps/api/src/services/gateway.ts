@@ -168,15 +168,17 @@ function createTraefikLabels(
  * from the file (hot-reloaded) instead of env vars.
  * Returns the list of provider IDs that have credentials configured.
  */
-function writeAuthProfiles(orgId: string, userId: string): string[] {
+function writeAuthProfiles(orgId: string, userId: string): { providerIds: string[]; modelOverrides: Record<string, string> } {
   const allKeys = getOrgAllApiKeys(orgId);
   const profiles: Record<string, Record<string, unknown>> = {};
   const providerIds: string[] = [];
+  const modelOverrides: Record<string, string> = {};
 
-  for (const { provider, key, credential_type } of allKeys) {
+  for (const { provider, key, credential_type, default_model } of allKeys) {
     const providerConfig = PROVIDERS.find((p) => p.id === provider);
     if (!providerConfig) continue;
     providerIds.push(provider);
+    if (default_model) modelOverrides[provider] = default_model;
 
     if (credential_type === "oauth") {
       // key is a JSON blob — Codex format: { tokens: { access_token, refresh_token, ... } }
@@ -231,7 +233,7 @@ function writeAuthProfiles(orgId: string, userId: string): string[] {
     JSON.stringify({ version: 1, profiles }, null, 2),
   );
 
-  return providerIds;
+  return { providerIds, modelOverrides };
 }
 
 /**
@@ -327,7 +329,7 @@ export async function provisionGateway(orgId: string, memberId: string) {
   fs.mkdirSync(gatewayDir, { recursive: true });
 
   // Write auth-profiles.json (credentials read from file, not env vars)
-  const providerIds = writeAuthProfiles(orgId, member.user_id);
+  const { providerIds, modelOverrides } = writeAuthProfiles(orgId, member.user_id);
   if (providerIds.length === 0)
     throw new Error("No API keys configured — add at least one provider key");
 
@@ -342,6 +344,7 @@ export async function provisionGateway(orgId: string, memberId: string) {
     port,
     token,
     activeProviderIds: providerIds,
+    modelOverrides,
     channelTokens,
   });
   fs.writeFileSync(
@@ -508,7 +511,7 @@ export async function redeployGateway(orgId: string, memberId: string) {
   }
 
   // Write auth-profiles.json (credentials read from file, not env vars)
-  const providerIds = writeAuthProfiles(orgId, member.user_id);
+  const { providerIds, modelOverrides } = writeAuthProfiles(orgId, member.user_id);
   if (providerIds.length === 0)
     throw new Error("No API keys configured — add at least one provider key");
 
@@ -521,6 +524,7 @@ export async function redeployGateway(orgId: string, memberId: string) {
     port: GATEWAY_INTERNAL_PORT,
     token: member.gateway_token,
     activeProviderIds: providerIds,
+    modelOverrides,
     channelTokens,
   });
   const gatewayDir = getGatewayDir(orgId, member.user_id);

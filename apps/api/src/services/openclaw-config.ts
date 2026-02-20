@@ -66,6 +66,8 @@ export function generateOpenClawConfig(options: {
   token: string;
   enabledChannels?: string[];
   activeProviderIds?: string[];
+  /** Per-provider model overrides from DB (provider id -> model id) */
+  modelOverrides?: Record<string, string>;
   channelTokens?: ChannelTokens;
 }): OpenClawConfig {
   const { port, token } = options;
@@ -112,12 +114,16 @@ export function generateOpenClawConfig(options: {
     .filter(Boolean) as typeof PROVIDERS;
 
   if (activeProviders.length > 0) {
+    const overrides = options.modelOverrides ?? {};
     const models: Record<string, Record<string, never>> = {};
+    // Use user-selected model if set, otherwise provider default
+    const resolveModel = (p: (typeof PROVIDERS)[number]) => overrides[p.id] || p.defaultModel;
+
     for (const p of activeProviders) {
-      models[p.defaultModel] = {};
+      models[resolveModel(p)] = {};
     }
-    const primary = activeProviders[0].defaultModel;
-    const fallbacks = activeProviders.slice(1).map((p) => p.defaultModel);
+    const primary = resolveModel(activeProviders[0]);
+    const fallbacks = activeProviders.slice(1).map((p) => resolveModel(p));
 
     config.agents = {
       defaults: {

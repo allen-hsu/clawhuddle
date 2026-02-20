@@ -115,6 +115,11 @@ export interface ImportSkillsRequest {
 
 export type CredentialType = 'api_key' | 'token' | 'oauth';
 
+export interface ModelOption {
+  id: string;
+  label: string;
+}
+
 export interface ProviderConfig {
   id: string;
   label: string;
@@ -122,6 +127,8 @@ export interface ProviderConfig {
   placeholder: string;
   /** Model ID used for agents.defaults.model in openclaw.json */
   defaultModel: string;
+  /** Available models the user can choose from */
+  models?: ModelOption[];
   /** Whether this provider supports setup tokens (e.g. `claude setup-token`) */
   supportsSetupToken?: boolean;
   /** Instructions shown in UI for obtaining a setup token */
@@ -133,7 +140,18 @@ export interface ProviderConfig {
 }
 
 export const PROVIDERS: ProviderConfig[] = [
-  { id: 'anthropic', label: 'Anthropic', envVar: 'ANTHROPIC_API_KEY', placeholder: 'sk-ant-...', defaultModel: 'anthropic/claude-sonnet-4-5', supportsSetupToken: true, setupTokenInstructions: 'Run `claude setup-token` in your terminal and paste the result here.' },
+  {
+    id: 'anthropic', label: 'Anthropic', envVar: 'ANTHROPIC_API_KEY', placeholder: 'sk-ant-...',
+    defaultModel: 'anthropic/claude-sonnet-4-5',
+    models: [
+      { id: 'anthropic/claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
+      { id: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+      { id: 'anthropic/claude-opus-4-5', label: 'Claude Opus 4.5' },
+      { id: 'anthropic/claude-opus-4-6', label: 'Claude Opus 4.6' },
+      { id: 'anthropic/claude-haiku-4-5', label: 'Claude Haiku 4.5' },
+    ],
+    supportsSetupToken: true, setupTokenInstructions: 'Run `claude setup-token` in your terminal and paste the result here.',
+  },
   { id: 'openai', label: 'OpenAI', envVar: 'OPENAI_API_KEY', placeholder: 'sk-...', defaultModel: 'openai/gpt-4.1' },
   { id: 'openai-codex', label: 'OpenAI Codex', envVar: '', placeholder: '', defaultModel: 'openai-codex/gpt-5.3-codex', supportsOAuth: true, oauthInstructions: 'Run `codex` and sign in with your ChatGPT account, then run `cat ~/.codex/auth.json` and paste the JSON here.' },
   { id: 'openrouter', label: 'OpenRouter', envVar: 'OPENROUTER_API_KEY', placeholder: 'sk-or-...', defaultModel: 'openrouter/anthropic/claude-sonnet-4.5' },
@@ -146,4 +164,6 @@ export interface SetApiKeyRequest {
   provider: string;
   key: string;
   credentialType?: CredentialType;
+  /** User-selected default model for this provider */
+  defaultModel?: string;
 }

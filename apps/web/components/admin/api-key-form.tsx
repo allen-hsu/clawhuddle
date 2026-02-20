@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useToast } from '@/components/ui/toast';
-import { PROVIDERS, type CredentialType } from '@clawhuddle/shared';
+import { PROVIDERS, type CredentialType, type ModelOption } from '@clawhuddle/shared';
 
 type FetchFn = <T>(path: string, options?: RequestInit) => Promise<T>;
 
@@ -12,6 +12,7 @@ export interface ApiKeyDisplay {
   key_masked: string;
   is_company_default: boolean;
   credential_type?: CredentialType;
+  default_model?: string | null;
 }
 
 interface Props {
@@ -40,6 +41,14 @@ export function ApiKeyForm({ initialKeys, fetchFn }: Props) {
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [credTabs, setCredTabs] = useState<Record<string, CredentialType>>({});
+  const [selectedModels, setSelectedModels] = useState<Record<string, string>>(() => {
+    // Initialize from existing keys
+    const init: Record<string, string> = {};
+    for (const k of initialKeys) {
+      if (k.default_model) init[k.provider] = k.default_model;
+    }
+    return init;
+  });
 
   const refresh = async () => {
     const res = await fetchFn<{ data: ApiKeyDisplay[] }>('/api-keys');
@@ -71,9 +80,11 @@ export function ApiKeyForm({ initialKeys, fetchFn }: Props) {
 
     setSaving(true);
     try {
+      const providerCfg = PROVIDERS.find((p) => p.id === provider);
+      const defaultModel = providerCfg?.models ? (selectedModels[provider] || providerCfg.defaultModel) : undefined;
       await fetchFn('/api-keys', {
         method: 'POST',
-        body: JSON.stringify({ provider, key, credentialType }),
+        body: JSON.stringify({ provider, key, credentialType, defaultModel }),
       });
       setInputs((prev) => ({ ...prev, [provider]: '' }));
       await refresh();
@@ -99,15 +110,30 @@ export function ApiKeyForm({ initialKeys, fetchFn }: Props) {
     }
   };
 
+  const updateModel = async (keyId: string, provider: string, model: string) => {
+    setSelectedModels((prev) => ({ ...prev, [provider]: model }));
+    try {
+      await fetchFn(`/api-keys/${keyId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ defaultModel: model }),
+      });
+      await refresh();
+      toast('Default model updated', 'success');
+    } catch (err: any) {
+      toast(err.message, 'error');
+    }
+  };
+
   const currentKey = (provider: string) => keys.find((k) => k.provider === provider);
 
   return (
     <div className="space-y-6 max-w-lg">
       {PROVIDERS.map((providerConfig) => {
-        const { id, label, placeholder, defaultModel, supportsSetupToken, setupTokenInstructions, supportsOAuth, oauthInstructions } = providerConfig;
+        const { id, label, placeholder, defaultModel, models, supportsSetupToken, setupTokenInstructions, supportsOAuth, oauthInstructions } = providerConfig;
         const existing = currentKey(id);
         const tabs = getAvailableTabs(providerConfig);
         const activeTab = credTabs[id] ?? tabs[0];
+        const currentModel = selectedModels[id] || existing?.default_model || defaultModel;
         return (
           <div
             key={id}
@@ -124,12 +150,36 @@ export function ApiKeyForm({ initialKeys, fetchFn }: Props) {
               >
                 {label}
               </h3>
-              <span
-                className="text-[11px] font-mono"
-                style={{ color: 'var(--text-tertiary)' }}
-              >
-                {defaultModel}
-              </span>
+              {models ? (
+                <select
+                  value={currentModel}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (existing) {
+                      updateModel(existing.id, id, val);
+                    } else {
+                      setSelectedModels((prev) => ({ ...prev, [id]: val }));
+                    }
+                  }}
+                  className="text-[11px] font-mono px-2 py-0.5 rounded"
+                  style={{
+                    background: 'var(--bg-tertiary)',
+                    color: 'var(--text-secondary)',
+                    border: '1px solid var(--border-subtle)',
+                  }}
+                >
+                  {models.map((m) => (
+                    <option key={m.id} value={m.id}>{m.label}</option>
+                  ))}
+                </select>
+              ) : (
+                <span
+                  className="text-[11px] font-mono"
+                  style={{ color: 'var(--text-tertiary)' }}
+                >
+                  {defaultModel}
+                </span>
+              )}
             </div>
 
             {existing && (

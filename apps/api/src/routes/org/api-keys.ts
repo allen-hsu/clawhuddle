@@ -37,6 +37,7 @@ export async function orgApiKeyRoutes(app: FastifyInstance) {
           key_masked: maskKey(decodeKey(k.key_value)),
           key_value: undefined,
           credential_type: k.credential_type || 'api_key',
+          default_model: k.default_model || null,
         })),
       };
     }
@@ -47,7 +48,7 @@ export async function orgApiKeyRoutes(app: FastifyInstance) {
     '/api/orgs/:orgId/api-keys',
     { preHandler: requireRole('owner', 'admin') },
     async (request, reply) => {
-      const { provider, key, credentialType } = request.body;
+      const { provider, key, credentialType, defaultModel } = request.body;
       if (!provider || !key) {
         return reply.status(400).send({ error: 'validation', message: 'provider and key are required' });
       }
@@ -62,14 +63,33 @@ export async function orgApiKeyRoutes(app: FastifyInstance) {
 
       const id = uuid();
       db.prepare(
-        'INSERT INTO api_keys (id, provider, key_value, is_company_default, org_id, credential_type) VALUES (?, ?, ?, 1, ?, ?)'
-      ).run(id, provider, encodeKey(key), request.orgId!, ct);
+        'INSERT INTO api_keys (id, provider, key_value, is_company_default, org_id, credential_type, default_model) VALUES (?, ?, ?, 1, ?, ?, ?)'
+      ).run(id, provider, encodeKey(key), request.orgId!, ct, defaultModel || null);
 
       syncAuthProfiles(request.orgId!);
 
       return reply.status(201).send({
-        data: { id, provider, key_masked: maskKey(key), is_company_default: true, credential_type: ct },
+        data: { id, provider, key_masked: maskKey(key), is_company_default: true, credential_type: ct, default_model: defaultModel || null },
       });
+    }
+  );
+
+  // Update default model for an existing API key
+  app.patch<{ Params: { orgId: string; id: string }; Body: { defaultModel: string } }>(
+    '/api/orgs/:orgId/api-keys/:id',
+    { preHandler: requireRole('owner', 'admin') },
+    async (request, reply) => {
+      const { id } = request.params;
+      const { defaultModel } = request.body;
+      const db = getDb();
+      const result = db.prepare(
+        'UPDATE api_keys SET default_model = ? WHERE id = ? AND org_id = ?'
+      ).run(defaultModel || null, id, request.orgId!);
+      if (result.changes === 0) {
+        return reply.status(404).send({ error: 'not_found', message: 'API key not found' });
+      }
+      syncAuthProfiles(request.orgId!);
+      return { data: { id, default_model: defaultModel || null } };
     }
   );
 
@@ -97,14 +117,15 @@ export function getOrgApiKey(orgId: string, provider: string): string | null {
 }
 
 // Returns all org API keys (decrypted) for auth-profiles.json generation
-export function getOrgAllApiKeys(orgId: string): { provider: string; key: string; credential_type: CredentialType }[] {
+export function getOrgAllApiKeys(orgId: string): { provider: string; key: string; credential_type: CredentialType; default_model: string | null }[] {
   const db = getDb();
   const rows = db.prepare(
-    'SELECT provider, key_value, credential_type FROM api_keys WHERE is_company_default = 1 AND org_id = ?'
-  ).all(orgId) as { provider: string; key_value: string; credential_type: string }[];
+    'SELECT provider, key_value, credential_type, default_model FROM api_keys WHERE is_company_default = 1 AND org_id = ?'
+  ).all(orgId) as { provider: string; key_value: string; credential_type: string; default_model: string | null }[];
   return rows.map((r) => ({
     provider: r.provider,
     key: decodeKey(r.key_value),
     credential_type: (r.credential_type || 'api_key') as CredentialType,
+    default_model: r.default_model || null,
   }));
 }
