@@ -5,3 +5,6 @@ dist/
 data/
 *.sqlite
 .turbo/
+.playwright-mcp
+.claude
+.serena
