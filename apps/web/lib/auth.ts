@@ -32,7 +32,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async signIn({ user }) {
       const allowedDomain = process.env.ALLOWED_DOMAIN;
       if (allowedDomain && user.email) {
-        return user.email.endsWith(`@${allowedDomain}`);
+        const domains = allowedDomain.split(',').map((d) => d.trim());
+        return domains.some((d) => user.email!.endsWith(`@${d}`));
       }
       return true;
     },
