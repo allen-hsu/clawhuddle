@@ -48,45 +48,47 @@ function PairingSection({ channelId, orgFetch }: { channelId: string; orgFetch: 
   };
 
   return (
-    <div
-      className="mt-3 pt-3"
-      style={{ borderTop: '1px dashed var(--border-subtle)' }}
-    >
-      <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-        Approve Pairing
-      </label>
-      <p className="text-[11px] mb-2" style={{ color: 'var(--text-tertiary)' }}>
-        Message your bot on Telegram. You'll receive a pairing code — paste it here to approve.
-      </p>
-      <div className="flex gap-2">
-        <input
-          type="text"
-          value={pairingCode}
-          onChange={(e) => setPairingCode(e.target.value.toUpperCase())}
-          placeholder="e.g. SAXMVEC7"
-          className="flex-1 px-3 py-2 text-sm rounded-lg font-mono uppercase tracking-wider"
-          style={{
-            background: 'var(--bg-secondary)',
-            border: '1px solid var(--border-primary)',
-            color: 'var(--text-primary)',
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') approve();
-          }}
-        />
-        <button
-          onClick={approve}
-          disabled={approving || !pairingCode.trim()}
-          className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50"
-          style={{
-            background: 'var(--green)',
-            color: '#fff',
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.85'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
-        >
-          {approving ? 'Approving...' : 'Approve'}
-        </button>
+    <div className="px-4 pb-4">
+      <div
+        className="rounded-lg px-3 py-3"
+        style={{ background: 'var(--bg-secondary)' }}
+      >
+        <p className="text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
+          Approve a new user
+        </p>
+        <p className="text-[11px] mb-2" style={{ color: 'var(--text-tertiary)' }}>
+          Message your bot on Telegram to get a pairing code, then paste it here.
+        </p>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={pairingCode}
+            onChange={(e) => setPairingCode(e.target.value.toUpperCase())}
+            placeholder="e.g. SAXMVEC7"
+            className="flex-1 px-3 py-1.5 text-sm rounded-lg font-mono uppercase tracking-wider"
+            style={{
+              background: 'var(--bg-primary)',
+              border: '1px solid var(--border-primary)',
+              color: 'var(--text-primary)',
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') approve();
+            }}
+          />
+          <button
+            onClick={approve}
+            disabled={approving || !pairingCode.trim()}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50"
+            style={{
+              background: 'var(--green)',
+              color: '#fff',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.85'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
+          >
+            {approving ? 'Approving...' : 'Approve'}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -97,7 +99,7 @@ export default function ChannelsPage() {
   const { toast } = useToast();
   const [configs, setConfigs] = useState<ChannelConfig[]>([]);
   const [loading, setLoading] = useState(true);
-  const [expandedChannel, setExpandedChannel] = useState<string | null>(null);
+  const [editingChannel, setEditingChannel] = useState<string | null>(null);
   const [tokenInput, setTokenInput] = useState('');
   const [saving, setSaving] = useState(false);
   const [gwStatus, setGwStatus] = useState<string | null>(null);
@@ -157,8 +159,9 @@ export default function ChannelsPage() {
       });
       toast('Token saved. Gateway redeploying...', 'success');
       setTokenInput('');
-      setExpandedChannel(null);
+      setEditingChannel(null);
       await fetchChannels();
+      await fetchGatewayStatus();
     } catch (err: any) {
       toast(err.message, 'error');
     } finally {
@@ -172,8 +175,9 @@ export default function ChannelsPage() {
     try {
       await orgFetch(`/me/channels/${channelId}`, { method: 'DELETE' });
       toast('Channel disconnected. Gateway redeploying...', 'success');
-      setExpandedChannel(null);
+      setEditingChannel(null);
       await fetchChannels();
+      await fetchGatewayStatus();
     } catch (err: any) {
       toast(err.message, 'error');
     } finally {
@@ -236,7 +240,7 @@ export default function ChannelsPage() {
           <div className="space-y-2">
             {CHANNELS.map((ch) => {
               const config = getConfig(ch.id);
-              const isExpanded = expandedChannel === ch.id;
+              const isEditing = editingChannel === ch.id;
 
               return (
                 <div
@@ -283,41 +287,60 @@ export default function ChannelsPage() {
                       </p>
                     </div>
 
-                    <button
-                      onClick={() => {
-                        setExpandedChannel(isExpanded ? null : ch.id);
-                        setTokenInput('');
-                      }}
-                      className="shrink-0 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
-                      style={{
-                        color: config?.configured ? 'var(--text-secondary)' : 'var(--accent)',
-                        background: config?.configured ? 'var(--bg-tertiary)' : 'var(--accent-muted)',
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = config?.configured
-                          ? 'var(--bg-hover)'
-                          : 'var(--accent-hover)';
-                        if (!config?.configured) e.currentTarget.style.color = 'var(--text-inverse)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = config?.configured
-                          ? 'var(--bg-tertiary)'
-                          : 'var(--accent-muted)';
-                        if (!config?.configured) e.currentTarget.style.color = 'var(--accent)';
-                      }}
-                    >
-                      {isExpanded ? 'Cancel' : config?.configured ? 'Edit' : 'Set up'}
-                    </button>
+                    {config?.configured ? (
+                      <button
+                        onClick={() => {
+                          setEditingChannel(isEditing ? null : ch.id);
+                          setTokenInput('');
+                        }}
+                        className="shrink-0 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+                        style={{ color: 'var(--text-tertiary)', background: 'transparent' }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'var(--bg-hover)';
+                          e.currentTarget.style.color = 'var(--text-secondary)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'transparent';
+                          e.currentTarget.style.color = 'var(--text-tertiary)';
+                        }}
+                      >
+                        {isEditing ? 'Cancel' : 'Edit token'}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setEditingChannel(isEditing ? null : ch.id);
+                          setTokenInput('');
+                        }}
+                        className="shrink-0 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+                        style={{ color: 'var(--accent)', background: 'var(--accent-muted)' }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'var(--accent-hover)';
+                          e.currentTarget.style.color = 'var(--text-inverse)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'var(--accent-muted)';
+                          e.currentTarget.style.color = 'var(--accent)';
+                        }}
+                      >
+                        {isEditing ? 'Cancel' : 'Set up'}
+                      </button>
+                    )}
                   </div>
 
-                  {/* Expanded input area */}
-                  {isExpanded && (
+                  {/* Pairing section — always visible when configured */}
+                  {config?.configured && !isEditing && (
+                    <PairingSection channelId={ch.id} orgFetch={orgFetch} />
+                  )}
+
+                  {/* Edit token area — only when editing */}
+                  {isEditing && (
                     <div
                       className="px-4 pb-4 pt-1"
                       style={{ borderTop: '1px solid var(--border-subtle)' }}
                     >
                       <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-                        Bot Token
+                        {config?.configured ? 'Replace Bot Token' : 'Bot Token'}
                       </label>
                       <div className="flex gap-2">
                         <input
@@ -356,20 +379,16 @@ export default function ChannelsPage() {
                       </p>
 
                       {config?.configured && (
-                        <>
-                          <PairingSection channelId={ch.id} orgFetch={orgFetch} />
-
-                          <button
-                            onClick={() => removeToken(ch.id)}
-                            disabled={saving}
-                            className="mt-3 text-xs font-medium transition-colors"
-                            style={{ color: 'var(--red)' }}
-                            onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.7'; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
-                          >
-                            Disconnect {ch.label}
-                          </button>
-                        </>
+                        <button
+                          onClick={() => removeToken(ch.id)}
+                          disabled={saving}
+                          className="mt-3 text-xs font-medium transition-colors"
+                          style={{ color: 'var(--red)' }}
+                          onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.7'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
+                        >
+                          Disconnect {ch.label}
+                        </button>
                       )}
                     </div>
                   )}
