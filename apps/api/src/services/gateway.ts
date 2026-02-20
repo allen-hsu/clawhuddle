@@ -138,7 +138,7 @@ const IS_LOCAL_DEV = DOMAIN === 'localhost';
 
 function createContainerConfig(containerName: string, subdomain: string, envVars: string[], orgId: string, userId: string) {
   const hostConfig: Record<string, any> = {
-    Binds: [`${getHostGatewayDir(orgId, userId)}:/root/.openclaw`],
+    Binds: [`${getHostGatewayDir(orgId, userId)}:/home/openclaw/.openclaw`],
     RestartPolicy: { Name: 'unless-stopped' },
   };
 
