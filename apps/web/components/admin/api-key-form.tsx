@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useToast } from '@/components/ui/toast';
-import { PROVIDERS } from '@clawhuddle/shared';
+import { PROVIDERS, type CredentialType } from '@clawhuddle/shared';
 
 type FetchFn = <T>(path: string, options?: RequestInit) => Promise<T>;
 
@@ -11,6 +11,7 @@ export interface ApiKeyDisplay {
   provider: string;
   key_masked: string;
   is_company_default: boolean;
+  credential_type?: CredentialType;
 }
 
 interface Props {
@@ -18,11 +19,27 @@ interface Props {
   fetchFn: FetchFn;
 }
 
+const CRED_TYPE_LABEL: Record<CredentialType, string> = {
+  api_key: 'API Key',
+  token: 'Setup Token',
+  oauth: 'OAuth Token',
+};
+
+function getAvailableTabs(provider: (typeof PROVIDERS)[number]): CredentialType[] {
+  // OAuth-only providers (no envVar) only show oauth tab
+  if (provider.supportsOAuth && !provider.envVar) return ['oauth'];
+  const tabs: CredentialType[] = ['api_key'];
+  if (provider.supportsSetupToken) tabs.push('token');
+  if (provider.supportsOAuth) tabs.push('oauth');
+  return tabs;
+}
+
 export function ApiKeyForm({ initialKeys, fetchFn }: Props) {
   const { toast } = useToast();
   const [keys, setKeys] = useState(initialKeys);
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [credTabs, setCredTabs] = useState<Record<string, CredentialType>>({});
 
   const refresh = async () => {
     const res = await fetchFn<{ data: ApiKeyDisplay[] }>('/api-keys');
@@ -32,16 +49,36 @@ export function ApiKeyForm({ initialKeys, fetchFn }: Props) {
   const saveKey = async (provider: string) => {
     const key = inputs[provider]?.trim();
     if (!key) return;
+    const providerConfig = PROVIDERS.find((p) => p.id === provider);
+    const tabs = providerConfig ? getAvailableTabs(providerConfig) : ['api_key' as const];
+    const credentialType: CredentialType = credTabs[provider] ?? tabs[0];
+
+    // Validate OAuth JSON before sending
+    if (credentialType === 'oauth') {
+      try {
+        const parsed = JSON.parse(key);
+        // Codex auth.json nests tokens under "tokens"
+        const tokens = parsed.tokens ?? parsed;
+        if (!tokens.access_token || !tokens.refresh_token) {
+          toast('Invalid auth.json — must contain access_token and refresh_token', 'error');
+          return;
+        }
+      } catch {
+        toast('Invalid JSON — paste the full contents of auth.json', 'error');
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       await fetchFn('/api-keys', {
         method: 'POST',
-        body: JSON.stringify({ provider, key }),
+        body: JSON.stringify({ provider, key, credentialType }),
       });
       setInputs((prev) => ({ ...prev, [provider]: '' }));
       await refresh();
-      const label = PROVIDERS.find((p) => p.id === provider)?.label ?? provider;
-      toast(`${label} key saved`, 'success');
+      const label = providerConfig?.label ?? provider;
+      toast(`${label} ${CRED_TYPE_LABEL[credentialType]?.toLowerCase() ?? 'key'} saved`, 'success');
     } catch (err: any) {
       toast(err.message, 'error');
     } finally {
@@ -66,8 +103,11 @@ export function ApiKeyForm({ initialKeys, fetchFn }: Props) {
 
   return (
     <div className="space-y-6 max-w-lg">
-      {PROVIDERS.map(({ id, label, placeholder, defaultModel }) => {
+      {PROVIDERS.map((providerConfig) => {
+        const { id, label, placeholder, defaultModel, supportsSetupToken, setupTokenInstructions, supportsOAuth, oauthInstructions } = providerConfig;
         const existing = currentKey(id);
+        const tabs = getAvailableTabs(providerConfig);
+        const activeTab = credTabs[id] ?? tabs[0];
         return (
           <div
             key={id}
@@ -94,8 +134,16 @@ export function ApiKeyForm({ initialKeys, fetchFn }: Props) {
 
             {existing && (
               <div className="flex items-center gap-2 mb-3">
+                <span
+                  className="text-[10px] font-medium px-1.5 py-0.5 rounded"
+                  style={{
+                    background: existing.credential_type === 'api_key' ? 'var(--bg-tertiary)' : 'var(--accent-muted, rgba(99,102,241,0.15))',
+                    color: existing.credential_type === 'api_key' ? 'var(--text-tertiary)' : 'var(--accent)',
+                  }}
+                >
+                  {CRED_TYPE_LABEL[existing.credential_type ?? 'api_key']}
+                </span>
                 <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                  Current:{' '}
                   <code
                     className="px-1.5 py-0.5 rounded text-[11px] font-mono"
                     style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}
@@ -116,18 +164,61 @@ export function ApiKeyForm({ initialKeys, fetchFn }: Props) {
               </div>
             )}
 
+            {tabs.length > 1 && (
+              <div className="flex gap-1 mb-3">
+                {tabs.map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setCredTabs((prev) => ({ ...prev, [id]: tab }))}
+                    className="px-3 py-1 text-xs font-medium rounded-md transition-all"
+                    style={{
+                      background: activeTab === tab ? 'var(--accent)' : 'transparent',
+                      color: activeTab === tab ? 'var(--text-inverse)' : 'var(--text-tertiary)',
+                      border: activeTab === tab ? 'none' : '1px solid var(--border-subtle)',
+                    }}
+                  >
+                    {CRED_TYPE_LABEL[tab]}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {activeTab === 'token' && setupTokenInstructions && (
+              <p className="text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>
+                {setupTokenInstructions}
+              </p>
+            )}
+
+            {activeTab === 'oauth' && oauthInstructions && (
+              <p className="text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>
+                {oauthInstructions}
+              </p>
+            )}
+
             <div className="flex gap-2">
-              <input
-                type="password"
-                value={inputs[id] ?? ''}
-                onChange={(e) => setInputs((prev) => ({ ...prev, [id]: e.target.value }))}
-                placeholder={placeholder}
-                className="flex-1 px-3 py-2 text-sm rounded-lg"
-              />
+              {activeTab === 'oauth' ? (
+                <textarea
+                  value={inputs[id] ?? ''}
+                  onChange={(e) => setInputs((prev) => ({ ...prev, [id]: e.target.value }))}
+                  placeholder='{"access_token": "...", "refresh_token": "...", "expires_at": "..."}'
+                  rows={3}
+                  className="flex-1 px-3 py-2 text-xs font-mono rounded-lg resize-none"
+                />
+              ) : (
+                <input
+                  type="password"
+                  value={inputs[id] ?? ''}
+                  onChange={(e) => setInputs((prev) => ({ ...prev, [id]: e.target.value }))}
+                  placeholder={
+                    activeTab === 'token' ? 'Paste setup token...' : placeholder
+                  }
+                  className="flex-1 px-3 py-2 text-sm rounded-lg"
+                />
+              )}
               <button
                 onClick={() => saveKey(id)}
                 disabled={saving}
-                className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50"
+                className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50 self-end"
                 style={{
                   background: 'var(--accent)',
                   color: 'var(--text-inverse)',

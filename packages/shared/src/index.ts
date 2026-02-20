@@ -113,6 +113,8 @@ export interface ImportSkillsRequest {
 
 // === Provider Registry ===
 
+export type CredentialType = 'api_key' | 'token' | 'oauth';
+
 export interface ProviderConfig {
   id: string;
   label: string;
@@ -120,11 +122,20 @@ export interface ProviderConfig {
   placeholder: string;
   /** Model ID used for agents.defaults.model in openclaw.json */
   defaultModel: string;
+  /** Whether this provider supports setup tokens (e.g. `claude setup-token`) */
+  supportsSetupToken?: boolean;
+  /** Instructions shown in UI for obtaining a setup token */
+  setupTokenInstructions?: string;
+  /** Whether this provider supports OAuth token paste (e.g. Codex auth.json) */
+  supportsOAuth?: boolean;
+  /** Instructions shown in UI for obtaining OAuth tokens */
+  oauthInstructions?: string;
 }
 
 export const PROVIDERS: ProviderConfig[] = [
-  { id: 'anthropic', label: 'Anthropic', envVar: 'ANTHROPIC_API_KEY', placeholder: 'sk-ant-...', defaultModel: 'anthropic/claude-sonnet-4-5' },
+  { id: 'anthropic', label: 'Anthropic', envVar: 'ANTHROPIC_API_KEY', placeholder: 'sk-ant-...', defaultModel: 'anthropic/claude-sonnet-4-5', supportsSetupToken: true, setupTokenInstructions: 'Run `claude setup-token` in your terminal and paste the result here.' },
   { id: 'openai', label: 'OpenAI', envVar: 'OPENAI_API_KEY', placeholder: 'sk-...', defaultModel: 'openai/gpt-4.1' },
+  { id: 'openai-codex', label: 'OpenAI Codex', envVar: '', placeholder: '', defaultModel: 'openai-codex/gpt-5.3-codex', supportsOAuth: true, oauthInstructions: 'Run `codex` and sign in with your ChatGPT account, then run `cat ~/.codex/auth.json` and paste the JSON here.' },
   { id: 'openrouter', label: 'OpenRouter', envVar: 'OPENROUTER_API_KEY', placeholder: 'sk-or-...', defaultModel: 'openrouter/anthropic/claude-sonnet-4.5' },
   { id: 'google', label: 'Google Gemini', envVar: 'GEMINI_API_KEY', placeholder: 'AIza...', defaultModel: 'google/gemini-2.5-pro' },
 ];
@@ -134,4 +145,5 @@ export const PROVIDER_IDS = PROVIDERS.map((p) => p.id);
 export interface SetApiKeyRequest {
   provider: string;
   key: string;
+  credentialType?: CredentialType;
 }

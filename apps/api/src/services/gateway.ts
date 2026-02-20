@@ -126,23 +126,85 @@ function createTraefikLabels(containerName: string, subdomain: string): Record<s
   };
 }
 
-function getOrgProviderEnv(orgId: string): { envVars: string[]; providerIds: string[] } {
+/**
+ * Writes auth-profiles.json for a gateway so OpenClaw reads credentials
+ * from the file (hot-reloaded) instead of env vars.
+ * Returns the list of provider IDs that have credentials configured.
+ */
+function writeAuthProfiles(orgId: string, userId: string): string[] {
   const allKeys = getOrgAllApiKeys(orgId);
-  const envVars: string[] = [];
+  const profiles: Record<string, Record<string, unknown>> = {};
   const providerIds: string[] = [];
-  for (const { provider, key } of allKeys) {
+
+  for (const { provider, key, credential_type } of allKeys) {
     const providerConfig = PROVIDERS.find((p) => p.id === provider);
-    if (providerConfig) {
-      envVars.push(`${providerConfig.envVar}=${key}`);
-      providerIds.push(provider);
+    if (!providerConfig) continue;
+    providerIds.push(provider);
+
+    if (credential_type === 'oauth') {
+      // key is a JSON blob — Codex format: { tokens: { access_token, refresh_token, ... } }
+      try {
+        const oauth = JSON.parse(key);
+        const tokens = oauth.tokens ?? oauth;
+        if (!tokens.access_token || !tokens.refresh_token) continue;
+
+        // Extract expiry from JWT payload (middle segment)
+        let expires: number | undefined;
+        try {
+          const payload = JSON.parse(Buffer.from(tokens.access_token.split('.')[1], 'base64').toString());
+          if (payload.exp) expires = payload.exp;
+        } catch { /* non-JWT or malformed — skip expires */ }
+
+        profiles[`${provider}:oauth`] = {
+          type: 'oauth',
+          provider,
+          access: tokens.access_token,
+          refresh: tokens.refresh_token,
+          ...(expires ? { expires } : {}),
+        };
+      } catch {
+        // Skip malformed OAuth JSON
+        continue;
+      }
+    } else if (credential_type === 'token') {
+      profiles[`${provider}:setup-token`] = { type: 'token', provider, token: key };
+    } else {
+      profiles[`${provider}:manual`] = { type: 'api_key', provider, key };
     }
   }
-  return { envVars, providerIds };
+
+  const authProfilesPath = path.join(
+    getGatewayDir(orgId, userId),
+    'agents', 'main', 'agent', 'auth-profiles.json'
+  );
+  fs.mkdirSync(path.dirname(authProfilesPath), { recursive: true });
+  fs.writeFileSync(authProfilesPath, JSON.stringify({ version: 1, profiles }, null, 2));
+
+  return providerIds;
+}
+
+/**
+ * Live-update auth-profiles.json for all running gateways in an org.
+ * Called after API key add/delete so credentials propagate without container restart.
+ */
+export function syncAuthProfiles(orgId: string): void {
+  const db = getDb();
+  const runningMembers = db.prepare(
+    `SELECT om.user_id FROM org_members om
+     WHERE om.org_id = ? AND om.gateway_status IN ('running', 'deploying')`
+  ).all(orgId) as { user_id: string }[];
+
+  for (const { user_id } of runningMembers) {
+    const gatewayDir = getGatewayDir(orgId, user_id);
+    if (fs.existsSync(gatewayDir)) {
+      writeAuthProfiles(orgId, user_id);
+    }
+  }
 }
 
 const IS_LOCAL_DEV = DOMAIN === 'localhost';
 
-function createContainerConfig(containerName: string, subdomain: string, envVars: string[], orgId: string, userId: string) {
+function createContainerConfig(containerName: string, subdomain: string, orgId: string, userId: string) {
   const hostConfig: Record<string, any> = {
     Binds: [`${getHostGatewayDir(orgId, userId)}:/root/.openclaw`],
     RestartPolicy: { Name: 'unless-stopped' },
@@ -158,7 +220,7 @@ function createContainerConfig(containerName: string, subdomain: string, envVars
   return {
     Image: GATEWAY_IMAGE,
     name: containerName,
-    Env: envVars,
+    Env: [],
     Labels: createTraefikLabels(containerName, subdomain),
     ExposedPorts: { [`${GATEWAY_INTERNAL_PORT}/tcp`]: {} },
     HostConfig: hostConfig,
@@ -191,23 +253,24 @@ export async function provisionGateway(orgId: string, memberId: string) {
     throw new Error('Gateway already running');
   }
 
-  const { envVars, providerIds } = getOrgProviderEnv(orgId);
-  if (envVars.length === 0) throw new Error('No API keys configured — add at least one provider key');
-
   // Use fixed internal port, generate token and subdomain
   const port = GATEWAY_INTERNAL_PORT;
   const token = crypto.randomBytes(24).toString('hex');
   const subdomain = generateSubdomain();
+
+  // Create workspace directory
+  const gatewayDir = getGatewayDir(orgId, member.user_id);
+  fs.mkdirSync(gatewayDir, { recursive: true });
+
+  // Write auth-profiles.json (credentials read from file, not env vars)
+  const providerIds = writeAuthProfiles(orgId, member.user_id);
+  if (providerIds.length === 0) throw new Error('No API keys configured — add at least one provider key');
 
   // Get member's skills
   const skills = getMemberSkills(orgId, member.user_id);
 
   // Generate config
   const config = generateOpenClawConfig({ port, token, activeProviderIds: providerIds });
-
-  // Create workspace directory
-  const gatewayDir = getGatewayDir(orgId, member.user_id);
-  fs.mkdirSync(gatewayDir, { recursive: true });
   fs.writeFileSync(path.join(gatewayDir, 'openclaw.json'), JSON.stringify(config, null, 2));
 
   // Install skill directories (still keyed by userId for filesystem)
@@ -232,7 +295,7 @@ export async function provisionGateway(orgId: string, memberId: string) {
     }
 
     const container = await docker.createContainer(
-      createContainerConfig(containerName, subdomain, envVars, orgId, member.user_id)
+      createContainerConfig(containerName, subdomain, orgId, member.user_id)
     );
 
     await container.start();
@@ -318,9 +381,6 @@ export async function redeployGateway(orgId: string, memberId: string) {
   const member = getMember(orgId, memberId);
   if (!member.gateway_port || !member.gateway_token || !member.gateway_subdomain) throw new Error('No gateway deployed');
 
-  const { envVars, providerIds } = getOrgProviderEnv(orgId);
-  if (envVars.length === 0) throw new Error('No API keys configured — add at least one provider key');
-
   const containerName = getContainerName(orgId, member.user_id);
 
   // Stop and remove old container
@@ -332,6 +392,10 @@ export async function redeployGateway(orgId: string, memberId: string) {
     // Container may not exist
   }
 
+  // Write auth-profiles.json (credentials read from file, not env vars)
+  const providerIds = writeAuthProfiles(orgId, member.user_id);
+  if (providerIds.length === 0) throw new Error('No API keys configured — add at least one provider key');
+
   // Update config (keep existing token; skills installed as directories)
   const skills = getMemberSkills(orgId, member.user_id);
   const config = generateOpenClawConfig({ port: GATEWAY_INTERNAL_PORT, token: member.gateway_token, activeProviderIds: providerIds });
@@ -341,9 +405,9 @@ export async function redeployGateway(orgId: string, memberId: string) {
   // Install skill directories
   await installSkillsForUser(path.join(orgId, member.user_id), skills);
 
-  // Create new container with updated env vars
+  // Create new container (credentials via auth-profiles.json, no env vars needed)
   const container = await docker.createContainer(
-    createContainerConfig(containerName, member.gateway_subdomain, envVars, orgId, member.user_id)
+    createContainerConfig(containerName, member.gateway_subdomain, orgId, member.user_id)
   );
 
   await container.start();
