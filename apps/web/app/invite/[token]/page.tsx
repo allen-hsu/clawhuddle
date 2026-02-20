@@ -19,7 +19,7 @@ export default function InvitePage() {
   const { data: session, status: authStatus } = useSession();
   const { refreshOrgs } = useOrg();
   const router = useRouter();
-  const userId = (session?.user as any)?.id;
+  const userId = session?.user?.id;
 
   const [invite, setInvite] = useState<InviteDetails | null>(null);
   const [loading, setLoading] = useState(true);

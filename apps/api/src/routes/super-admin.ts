@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { getDb } from '../db/index.js';
 import { authPlugin } from '../middleware/auth.js';
 
-const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL || 'allenhsu.taiwan@gmail.com';
+const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL;
 
 export async function superAdminRoutes(app: FastifyInstance) {
   await app.register(authPlugin);

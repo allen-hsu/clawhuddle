@@ -2,11 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import { useOrgFetch } from '@/lib/use-org-fetch';
+import { useToast } from '@/components/ui/toast';
 import { SkillTable } from '@/components/admin/skill-table';
 import type { Skill } from '@clawhuddle/shared';
 
 export default function AdminSkillsPage() {
   const { orgFetch, ready } = useOrgFetch();
+  const { toast } = useToast();
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -14,7 +16,7 @@ export default function AdminSkillsPage() {
     if (!orgFetch) return;
     orgFetch<{ data: Skill[] }>('/skills')
       .then((res) => setSkills(res.data))
-      .catch(() => {})
+      .catch(() => toast('Failed to load skills', 'error'))
       .finally(() => setLoading(false));
   }, [orgFetch]);
 

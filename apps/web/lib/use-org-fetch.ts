@@ -8,7 +8,7 @@ import { createOrgFetch } from './api';
 export function useOrgFetch() {
   const { data: session } = useSession();
   const { currentOrgId } = useOrg();
-  const userId = (session?.user as any)?.id;
+  const userId = session?.user?.id;
 
   const orgFetch = useMemo(() => {
     if (!currentOrgId || !userId) return null;

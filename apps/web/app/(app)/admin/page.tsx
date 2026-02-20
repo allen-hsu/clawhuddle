@@ -2,13 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import { useOrgFetch } from '@/lib/use-org-fetch';
-import { useOrg } from '@/lib/org-context';
+import { useToast } from '@/components/ui/toast';
 import { MemberTable } from '@/components/admin/member-table';
 import type { OrgMember } from '@clawhuddle/shared';
 
 export default function AdminMembersPage() {
   const { orgFetch, ready } = useOrgFetch();
-  const { currentOrg } = useOrg();
+  const { toast } = useToast();
   const [members, setMembers] = useState<OrgMember[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -16,7 +16,7 @@ export default function AdminMembersPage() {
     if (!orgFetch) return;
     orgFetch<{ data: OrgMember[] }>('/members')
       .then((res) => setMembers(res.data))
-      .catch(() => {})
+      .catch(() => toast('Failed to load members', 'error'))
       .finally(() => setLoading(false));
   }, [orgFetch]);
 
@@ -36,7 +36,7 @@ export default function AdminMembersPage() {
       <h1 className="text-xl font-semibold tracking-tight mb-6" style={{ color: 'var(--text-primary)' }}>
         Members
       </h1>
-      <MemberTable initialMembers={members} tier={currentOrg?.tier} />
+      <MemberTable initialMembers={members} />
     </div>
   );
 }

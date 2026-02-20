@@ -4,10 +4,8 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { apiFetch } from '@/lib/api';
 import { useToast } from '@/components/ui/toast';
-import type { Organization, OrgTier } from '@clawhuddle/shared';
-import { TIER_INFO } from '@clawhuddle/shared';
-
-const SUPER_ADMIN_EMAIL = 'allenhsu.taiwan@gmail.com';
+import { useSuperAdmin } from '@/lib/use-super-admin';
+import type { Organization } from '@clawhuddle/shared';
 
 interface OrgWithCount extends Organization {
   member_count: number;
@@ -16,13 +14,10 @@ interface OrgWithCount extends Organization {
 export default function SuperAdminPage() {
   const { data: session } = useSession();
   const { toast } = useToast();
-  const userId = (session?.user as any)?.id;
-  const email = session?.user?.email;
+  const userId = session?.user?.id;
   const [orgs, setOrgs] = useState<OrgWithCount[]>([]);
   const [loading, setLoading] = useState(true);
-  const [updating, setUpdating] = useState<string | null>(null);
-
-  const isSuperAdmin = email === SUPER_ADMIN_EMAIL;
+  const isSuperAdmin = useSuperAdmin();
 
   useEffect(() => {
     if (!userId || !isSuperAdmin) return;
@@ -33,23 +28,6 @@ export default function SuperAdminPage() {
       .catch(() => toast('Failed to load organizations', 'error'))
       .finally(() => setLoading(false));
   }, [userId, isSuperAdmin]);
-
-  const updateTier = async (orgId: string, tier: OrgTier) => {
-    setUpdating(orgId);
-    try {
-      await apiFetch(`/api/super-admin/orgs/${orgId}/tier`, {
-        method: 'PATCH',
-        headers: { 'x-user-id': userId! },
-        body: JSON.stringify({ tier }),
-      });
-      setOrgs((prev) => prev.map((o) => (o.id === orgId ? { ...o, tier } : o)));
-      toast(`Tier updated to ${TIER_INFO[tier].label}`, 'success');
-    } catch {
-      toast('Failed to update tier', 'error');
-    } finally {
-      setUpdating(null);
-    }
-  };
 
   if (!isSuperAdmin) {
     return (
@@ -78,7 +56,7 @@ export default function SuperAdminPage() {
         Super Admin
       </h1>
       <p className="text-xs mb-6" style={{ color: 'var(--text-tertiary)' }}>
-        Manage all organizations and tiers
+        Manage all organizations
       </p>
 
       <div
@@ -91,7 +69,7 @@ export default function SuperAdminPage() {
         <table className="w-full text-sm">
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border-primary)' }}>
-              {['Organization', 'Slug', 'Members', 'Tier', 'Created'].map((h) => (
+              {['Organization', 'Slug', 'Members', 'Created'].map((h) => (
                 <th
                   key={h}
                   className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider"
@@ -121,23 +99,6 @@ export default function SuperAdminPage() {
                 </td>
                 <td className="px-4 py-3 tabular-nums" style={{ color: 'var(--text-secondary)' }}>
                   {org.member_count}
-                </td>
-                <td className="px-4 py-3">
-                  <select
-                    value={org.tier}
-                    onChange={(e) => updateTier(org.id, e.target.value as OrgTier)}
-                    disabled={updating === org.id}
-                    className="text-xs font-medium px-2 py-1 rounded-md cursor-pointer disabled:opacity-50"
-                    style={{
-                      background: 'var(--bg-tertiary)',
-                      color: 'var(--text-primary)',
-                      border: '1px solid var(--border-primary)',
-                    }}
-                  >
-                    <option value="free">Free</option>
-                    <option value="pro">Pro</option>
-                    <option value="enterprise">Enterprise</option>
-                  </select>
                 </td>
                 <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
                   {new Date(org.created_at).toLocaleDateString()}

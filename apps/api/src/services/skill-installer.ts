@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { execSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import type { Skill } from '@clawhuddle/shared';
 
 function getDataDir(): string {
@@ -14,13 +14,19 @@ function getRepoDir(gitUrl: string): string {
 }
 
 export function cloneOrUpdateRepo(gitUrl: string): string {
+  if (!/^https?:\/\//.test(gitUrl) && !/^git@/.test(gitUrl)) {
+    throw new Error(`Invalid git URL: ${gitUrl}`);
+  }
+
   const repoDir = getRepoDir(gitUrl);
 
   if (fs.existsSync(path.join(repoDir, '.git'))) {
-    execSync('git pull', { cwd: repoDir, stdio: 'pipe', timeout: 30_000 });
+    const pull = spawnSync('git', ['pull'], { cwd: repoDir, stdio: 'pipe', timeout: 30_000 });
+    if (pull.status !== 0) throw new Error(`git pull failed: ${pull.stderr?.toString()}`);
   } else {
     fs.mkdirSync(path.dirname(repoDir), { recursive: true });
-    execSync(`git clone --depth 1 ${gitUrl} ${repoDir}`, { stdio: 'pipe', timeout: 60_000 });
+    const clone = spawnSync('git', ['clone', '--depth', '1', gitUrl, repoDir], { stdio: 'pipe', timeout: 60_000 });
+    if (clone.status !== 0) throw new Error(`git clone failed: ${clone.stderr?.toString()}`);
   }
 
   return repoDir;
@@ -72,7 +78,13 @@ export async function installSkillsForUser(userId: string, skills: Skill[]): Pro
     if (!skill.git_url || !skill.git_path) continue;
 
     const repoDir = cloneOrUpdateRepo(skill.git_url);
-    const srcDir = path.join(repoDir, skill.git_path);
+    const srcDir = path.resolve(repoDir, skill.git_path);
+
+    // Prevent path traversal outside repo directory
+    if (!srcDir.startsWith(path.resolve(repoDir) + path.sep) && srcDir !== path.resolve(repoDir)) {
+      console.warn(`Path traversal blocked: ${skill.git_path} (skill: ${skill.name})`);
+      continue;
+    }
 
     if (!fs.existsSync(srcDir)) {
       console.warn(`Skill source not found: ${srcDir} (skill: ${skill.name})`);

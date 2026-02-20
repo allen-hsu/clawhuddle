@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-user-id': (session.user as any).id || '',
+      'x-user-id': session.user.id || '',
     },
     body: JSON.stringify(body),
   });

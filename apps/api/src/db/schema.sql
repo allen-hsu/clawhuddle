@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS user_skills (
 CREATE TABLE IF NOT EXISTS api_keys (
     id TEXT PRIMARY KEY,
     provider TEXT NOT NULL,
-    key_encrypted TEXT NOT NULL,
+    key_value TEXT NOT NULL,
     is_company_default INTEGER NOT NULL DEFAULT 0,
     org_id TEXT REFERENCES organizations(id),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP

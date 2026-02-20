@@ -4,7 +4,7 @@ services:
     command:
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
-      - "--providers.docker.network=clawhuddle-net"
+      - "--providers.docker.network=${DOCKER_NETWORK:-clawhuddle-net}"
       - "--entrypoints.web.address=:80"
     ports:
       - "8080:80"
@@ -19,7 +19,7 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
     environment:
-      - NEXTAUTH_URL=https://clawhuddle.com
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
       - AUTH_TRUST_HOST=true
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
@@ -52,15 +52,16 @@ services:
     environment:
       - DATABASE_PATH=/data/db.sqlite
       - DATA_DIR=/data
-      - HOST_DATA_DIR=/opt/clawhuddle/data
+      - HOST_DATA_DIR=${HOST_DATA_DIR:-./data}
       - PORT=4000
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - RESEND_API_KEY=${RESEND_API_KEY:-}
       - EMAIL_FROM=${EMAIL_FROM:-}
-      - APP_URL=https://clawhuddle.com
+      - APP_URL=${APP_URL:-http://localhost:3000}
       - SUPER_ADMIN_EMAIL=${SUPER_ADMIN_EMAIL:-}
       - DOCKER_NETWORK=clawhuddle-net
       - DOMAIN=${DOMAIN:-localhost}
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:3000}
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.api.rule=PathPrefix(`/api`) && !PathPrefix(`/api/auth`)"

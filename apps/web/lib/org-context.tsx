@@ -37,7 +37,7 @@ const ORG_STORAGE_KEY = 'clawhuddle.currentOrgId';
 
 export function OrgProvider({ children }: { children: ReactNode }) {
   const { data: session } = useSession();
-  const userId = (session?.user as any)?.id;
+  const userId = session?.user?.id;
   const [orgs, setOrgs] = useState<OrgWithRole[]>([]);
   const [currentOrgId, setCurrentOrgId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);

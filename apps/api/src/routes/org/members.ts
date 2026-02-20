@@ -4,8 +4,8 @@ import { v4 as uuid } from 'uuid';
 import crypto from 'node:crypto';
 import { requireRole } from '../../middleware/auth.js';
 import { sendInvitationEmail } from '../../services/email.js';
-import type { InviteMemberRequest, UpdateMemberRequest, OrgTier } from '@clawhuddle/shared';
-import { TIER_LIMITS } from '@clawhuddle/shared';
+import type { InviteMemberRequest, UpdateMemberRequest } from '@clawhuddle/shared';
+import { DEFAULT_MAX_MEMBERS } from '@clawhuddle/shared';
 
 export async function orgMemberRoutes(app: FastifyInstance) {
   // List members
@@ -54,10 +54,8 @@ export async function orgMemberRoutes(app: FastifyInstance) {
         return reply.status(409).send({ error: 'conflict', message: 'Invitation already pending for this email' });
       }
 
-      // Enforce tier member limit
-      const orgRow = db.prepare('SELECT tier FROM organizations WHERE id = ?').get(request.orgId!) as { tier: OrgTier } | undefined;
-      const tier = orgRow?.tier || 'free';
-      const limit = TIER_LIMITS[tier];
+      // Enforce member limit (configurable via env var)
+      const limit = Number(process.env.MAX_MEMBERS_PER_ORG) || DEFAULT_MAX_MEMBERS;
       const { count: currentCount } = db.prepare(
         `SELECT COUNT(*) as count FROM (
            SELECT user_id FROM org_members WHERE org_id = ?
@@ -68,9 +66,8 @@ export async function orgMemberRoutes(app: FastifyInstance) {
 
       if (currentCount >= limit) {
         return reply.status(403).send({
-          error: 'tier_limit',
-          message: `Member limit reached for ${tier} tier (${currentCount}/${limit})`,
-          tier,
+          error: 'member_limit',
+          message: `Member limit reached (${currentCount}/${limit}). Adjust MAX_MEMBERS_PER_ORG to increase.`,
           limit,
           current: currentCount,
         });

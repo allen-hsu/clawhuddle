@@ -58,7 +58,7 @@ function getDataDir(): string {
 
 // Host path for Docker bind mounts (Docker daemon runs on host, not inside this container)
 function getHostDataDir(): string {
-  return process.env.HOST_DATA_DIR || getDataDir();
+  return path.resolve(process.env.HOST_DATA_DIR || getDataDir());
 }
 
 function getGatewayDir(orgId: string, userId: string): string {

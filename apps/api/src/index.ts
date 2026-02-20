@@ -12,7 +12,6 @@ import { orgApiKeyRoutes } from './routes/org/api-keys.js';
 import { orgGatewayRoutes } from './routes/org/gateways.js';
 import { orgUserSkillRoutes } from './routes/org/user-skills.js';
 import { orgChatRoutes } from './routes/org/chat.js';
-import { orgOAuthRoutes } from './routes/org/oauth.js';
 import { superAdminRoutes } from './routes/super-admin.js';
 import { getDb } from './db/index.js';
 
@@ -33,7 +32,10 @@ const app = Fastify({ logger: true });
   }
 }
 
-await app.register(cors, { origin: true, credentials: true });
+await app.register(cors, {
+  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  credentials: true,
+});
 
 // Public / auth routes (no org context needed)
 await app.register(authRoutes);
@@ -53,7 +55,6 @@ await app.register(async function orgScopedRoutes(instance) {
   await instance.register(orgGatewayRoutes);
   await instance.register(orgUserSkillRoutes);
   await instance.register(orgChatRoutes);
-  await instance.register(orgOAuthRoutes);
 });
 
 app.get('/api/health', async () => {

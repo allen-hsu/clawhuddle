@@ -2,18 +2,20 @@
 
 import { useState, useEffect } from 'react';
 import { useOrgFetch } from '@/lib/use-org-fetch';
-import { ApiKeyForm } from '@/components/admin/api-key-form';
+import { useToast } from '@/components/ui/toast';
+import { ApiKeyForm, type ApiKeyDisplay } from '@/components/admin/api-key-form';
 
 export default function ApiKeysPage() {
   const { orgFetch, ready } = useOrgFetch();
-  const [keys, setKeys] = useState<any[]>([]);
+  const { toast } = useToast();
+  const [keys, setKeys] = useState<ApiKeyDisplay[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!orgFetch) return;
-    orgFetch<{ data: any[] }>('/api-keys')
+    orgFetch<{ data: ApiKeyDisplay[] }>('/api-keys')
       .then((res) => setKeys(res.data))
-      .catch(() => {})
+      .catch(() => toast('Failed to load API keys', 'error'))
       .finally(() => setLoading(false));
   }, [orgFetch]);
 

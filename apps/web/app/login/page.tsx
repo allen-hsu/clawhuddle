@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { ClawHuddleLogo } from '@/components/logo';
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('admin@clawhuddle.local');
+  const [email, setEmail] = useState('');
   const isDev = process.env.NODE_ENV === 'development';
 
   return (

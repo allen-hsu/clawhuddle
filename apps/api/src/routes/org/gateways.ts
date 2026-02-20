@@ -95,6 +95,7 @@ export async function orgGatewayRoutes(app: FastifyInstance) {
   // Get gateway status
   app.get<{ Params: { orgId: string; memberId: string } }>(
     '/api/orgs/:orgId/gateways/members/:memberId/status',
+    { preHandler: requireRole('owner', 'admin') },
     async (request, reply) => {
       const { orgId, memberId } = request.params;
       try {

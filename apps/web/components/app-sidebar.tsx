@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
 import { useOrg } from '@/lib/org-context';
+import { useSuperAdmin } from '@/lib/use-super-admin';
 import { OrgSwitcher } from './org-switcher';
 import { ClawHuddleLogo } from './logo';
 
@@ -123,7 +124,7 @@ export function AppSidebar() {
   const { data: session } = useSession();
   const { currentOrgId, memberRole } = useOrg();
   const isAdmin = memberRole === 'admin' || memberRole === 'owner';
-  const isSuperAdmin = session?.user?.email === 'allenhsu.taiwan@gmail.com';
+  const isSuperAdmin = useSuperAdmin();
 
   return (
     <aside
@@ -205,8 +206,19 @@ export function AppSidebar() {
           Sign out
         </button>
 
-        {/* User info */}
-        <div className="px-3 pt-2">
+        {/* Sponsor + User info */}
+        <div className="px-3 pt-2 space-y-2">
+          <a
+            href="https://buymeacoffee.com/unless"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 text-[11px] transition-colors"
+            style={{ color: 'var(--text-tertiary)' }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = '#ffdd00'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; }}
+          >
+            ☕ Buy me a coffee
+          </a>
           <p className="text-[11px] truncate" style={{ color: 'var(--text-tertiary)' }}>
             {session?.user?.email}
           </p>

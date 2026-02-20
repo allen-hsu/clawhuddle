@@ -264,112 +264,6 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* ─── Pricing ─── */}
-        <section
-          id="pricing"
-          className="py-24"
-          style={{ background: 'rgba(255,255,255,0.015)' }}
-        >
-          <div className="max-w-6xl mx-auto px-6 md:px-10">
-            <h2
-              className="text-[22px] font-bold mb-12"
-              style={{ color: '#f0f4ff' }}
-            >
-              <span style={{ color: '#ff4d4d' }}>&#x276F;</span>{' '}
-              Pricing
-            </h2>
-
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-12 items-start">
-              <div className="md:col-span-5">
-                <h3
-                  className="text-[clamp(1.5rem,3vw,2rem)] leading-[1.2] tracking-[-0.01em] font-bold mb-4"
-                  style={{ color: '#f0f4ff' }}
-                >
-                  Free up to five.
-                  <br />
-                  <span style={{ color: '#ff4d4d' }}>$10/mo after that.</span>
-                </h3>
-                <p className="text-[14px] leading-[1.7] mb-6" style={{ color: '#5a6480' }}>
-                  Your first five team members are on us, forever.
-                  Once you go beyond five, it&apos;s a flat $10 per month —
-                  not per seat, just $10 total. No surprises.
-                </p>
-                <Link
-                  href="/login"
-                  className="inline-block text-[14px] font-semibold px-6 py-2.5 rounded-md transition-all"
-                  style={{
-                    background: '#ff4d4d',
-                    color: '#fff',
-                    boxShadow: '0 0 20px rgba(255, 77, 77, 0.15)',
-                  }}
-                >
-                  Start for free
-                </Link>
-              </div>
-
-              <div className="md:col-span-7 md:pl-8">
-                <div
-                  className="rounded-xl p-6"
-                  style={{
-                    background: 'rgba(10, 15, 26, 0.65)',
-                    border: '1px solid rgba(136, 146, 176, 0.1)',
-                  }}
-                >
-                  <div className="flex items-baseline gap-3 mb-1">
-                    <span
-                      className="text-[48px] leading-none font-bold"
-                      style={{ color: '#f0f4ff' }}
-                    >
-                      $0
-                    </span>
-                    <span className="text-[14px]" style={{ color: '#5a6480' }}>
-                      / month
-                    </span>
-                  </div>
-                  <p className="text-[14px] mb-6" style={{ color: '#8892b0' }}>
-                    For teams of 1&ndash;5
-                  </p>
-
-                  <div className="space-y-2.5 mb-8">
-                    {[
-                      'Per-user AI assistant instances',
-                      'Skill library & management',
-                      'Admin dashboard & controls',
-                      'Email invitations',
-                      'Automatic deployment',
-                    ].map((feature) => (
-                      <div key={feature} className="flex items-start gap-3 text-[13px]">
-                        <span className="mt-0.5" style={{ color: '#5a6480' }}>&mdash;</span>
-                        <span style={{ color: '#8892b0' }}>{feature}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div
-                    className="pt-5"
-                    style={{ borderTop: '1px solid rgba(136, 146, 176, 0.1)' }}
-                  >
-                    <div className="flex items-baseline gap-3 mb-1">
-                      <span
-                        className="text-[32px] leading-none font-bold"
-                        style={{ color: '#ff4d4d' }}
-                      >
-                        $10
-                      </span>
-                      <span className="text-[14px]" style={{ color: '#5a6480' }}>
-                        / month &middot; flat
-                      </span>
-                    </div>
-                    <p className="text-[13px]" style={{ color: '#5a6480' }}>
-                      For teams beyond 5 members. Same features, no per-seat fees.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
         {/* ─── FAQ ─── */}
         <section className="py-24">
           <div className="max-w-6xl mx-auto px-6 md:px-10">
@@ -391,8 +285,8 @@ export default function LandingPage() {
                 a="Yes. You provide keys for Anthropic, OpenAI, or whichever provider you use. Your keys, your control."
               />
               <FaqItem
-                q="What happens past 5 members?"
-                a="You pay $10/month total — not per seat. Add 6 people or 60, same price. We may introduce tiers later, but early users keep this rate."
+                q="Is there a member limit?"
+                a="By default each organization supports up to 50 members. You can adjust this via the MAX_MEMBERS_PER_ORG environment variable."
               />
               <FaqItem
                 q="Is data shared between users?"
@@ -427,7 +321,7 @@ export default function LandingPage() {
                 Your team is waiting.
               </h2>
               <p className="text-[15px] mb-8" style={{ color: '#5a6480' }}>
-                Free for up to 5 members. Set up in under 2 minutes.
+                Open source &amp; self-hosted. Set up in under 2 minutes.
               </p>
               <Link
                 href="/login"
@@ -450,15 +344,25 @@ export default function LandingPage() {
             <span className="text-[13px]" style={{ color: '#2a3350' }}>
               ClawHuddle
             </span>
-            <a
-              href="https://openclaw.ai"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[12px] transition-colors"
-              style={{ color: '#2a3350' }}
-            >
-              Built on OpenClaw
-            </a>
+            <div className="flex items-center gap-4">
+              <a
+                href="https://buymeacoffee.com/unless"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[12px] transition-colors text-[#5a6480] hover:text-[#ffdd00]"
+              >
+                ☕ Buy me a coffee
+              </a>
+              <a
+                href="https://openclaw.ai"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[12px] transition-colors"
+                style={{ color: '#2a3350' }}
+              >
+                Built on OpenClaw
+              </a>
+            </div>
           </div>
         </footer>
       </div>

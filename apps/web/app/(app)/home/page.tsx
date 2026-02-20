@@ -40,7 +40,7 @@ export default function DashboardPage() {
 
 function CreateOrgView({ onCreated }: { onCreated: () => Promise<void> }) {
   const { data: session } = useSession();
-  const userId = (session?.user as any)?.id;
+  const userId = session?.user?.id;
   const [orgName, setOrgName] = useState('');
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');

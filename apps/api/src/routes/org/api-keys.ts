@@ -4,7 +4,8 @@ import { v4 as uuid } from 'uuid';
 import { requireRole } from '../../middleware/auth.js';
 import { PROVIDER_IDS, type SetApiKeyRequest } from '@clawhuddle/shared';
 
-// Simple base64 encode/decode for MVP (same as original)
+// WARNING: base64 is NOT real encryption — it only obscures keys in the DB.
+// For production, replace with AES-GCM using an ENCRYPTION_KEY env variable.
 function encodeKey(key: string): string {
   return Buffer.from(key).toString('base64');
 }
@@ -32,8 +33,8 @@ export async function orgApiKeyRoutes(app: FastifyInstance) {
       return {
         data: keys.map((k) => ({
           ...k,
-          key_masked: maskKey(decodeKey(k.key_encrypted)),
-          key_encrypted: undefined,
+          key_masked: maskKey(decodeKey(k.key_value)),
+          key_value: undefined,
         })),
       };
     }
@@ -58,7 +59,7 @@ export async function orgApiKeyRoutes(app: FastifyInstance) {
 
       const id = uuid();
       db.prepare(
-        'INSERT INTO api_keys (id, provider, key_encrypted, is_company_default, org_id) VALUES (?, ?, ?, 1, ?)'
+        'INSERT INTO api_keys (id, provider, key_value, is_company_default, org_id) VALUES (?, ?, ?, 1, ?)'
       ).run(id, provider, encodeKey(key), request.orgId!);
 
       return reply.status(201).send({
@@ -84,16 +85,16 @@ export async function orgApiKeyRoutes(app: FastifyInstance) {
 export function getOrgApiKey(orgId: string, provider: string): string | null {
   const db = getDb();
   const row = db.prepare(
-    'SELECT key_encrypted FROM api_keys WHERE provider = ? AND is_company_default = 1 AND org_id = ?'
-  ).get(provider, orgId) as { key_encrypted: string } | undefined;
-  return row ? decodeKey(row.key_encrypted) : null;
+    'SELECT key_value FROM api_keys WHERE provider = ? AND is_company_default = 1 AND org_id = ?'
+  ).get(provider, orgId) as { key_value: string } | undefined;
+  return row ? decodeKey(row.key_value) : null;
 }
 
 // Returns all org API keys (decrypted) for container env var injection
 export function getOrgAllApiKeys(orgId: string): { provider: string; key: string }[] {
   const db = getDb();
   const rows = db.prepare(
-    'SELECT provider, key_encrypted FROM api_keys WHERE is_company_default = 1 AND org_id = ?'
-  ).all(orgId) as { provider: string; key_encrypted: string }[];
-  return rows.map((r) => ({ provider: r.provider, key: decodeKey(r.key_encrypted) }));
+    'SELECT provider, key_value FROM api_keys WHERE is_company_default = 1 AND org_id = ?'
+  ).all(orgId) as { provider: string; key_value: string }[];
+  return rows.map((r) => ({ provider: r.provider, key: decodeKey(r.key_value) }));
 }

@@ -6,8 +6,7 @@ import { useOrg } from '@/lib/org-context';
 import { createOrgFetch } from '@/lib/api';
 import { useToast } from '@/components/ui/toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
-import type { OrgMember, OrgTier } from '@clawhuddle/shared';
-import { TIER_LIMITS } from '@clawhuddle/shared';
+import type { OrgMember } from '@clawhuddle/shared';
 
 function Badge({ color, children }: { color: 'green' | 'red' | 'yellow' | 'blue' | 'purple' | 'gray'; children: React.ReactNode }) {
   const styles: Record<string, { bg: string; text: string }> = {
@@ -51,19 +50,18 @@ function ActionBtn({ onClick, color = 'default', children }: { onClick: () => vo
 
 interface Props {
   initialMembers: OrgMember[];
-  tier?: OrgTier;
 }
 
-export function MemberTable({ initialMembers, tier = 'free' }: Props) {
+export function MemberTable({ initialMembers }: Props) {
   const { data: session } = useSession();
   const { currentOrgId } = useOrg();
   const { toast } = useToast();
   const { confirm } = useConfirm();
-  const userId = (session?.user as any)?.id;
+  const userId = session?.user?.id;
   const [members, setMembers] = useState(initialMembers);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviting, setInviting] = useState(false);
-  const [tierLimitHit, setTierLimitHit] = useState(false);
+  const [limitHit, setLimitHit] = useState(false);
   const [loadingGateway, setLoadingGateway] = useState<string | null>(null);
 
   const orgFetch = useCallback(
@@ -121,8 +119,8 @@ export function MemberTable({ initialMembers, tier = 'free' }: Props) {
       setInviteLink(link);
       setInviteEmail('');
     } catch (err: any) {
-      if (err.code === 'tier_limit') {
-        setTierLimitHit(true);
+      if (err.code === 'member_limit') {
+        setLimitHit(true);
       } else {
         toast(err.message, 'error');
       }
@@ -269,7 +267,7 @@ export function MemberTable({ initialMembers, tier = 'free' }: Props) {
         <input
           type="email"
           value={inviteEmail}
-          onChange={(e) => { setInviteEmail(e.target.value); setTierLimitHit(false); }}
+          onChange={(e) => { setInviteEmail(e.target.value); setLimitHit(false); }}
           placeholder="employee@company.com"
           className="flex-1 max-w-sm px-3 py-2 text-sm rounded-lg"
         />
@@ -287,28 +285,21 @@ export function MemberTable({ initialMembers, tier = 'free' }: Props) {
           Invite Member
         </button>
         <span className="text-xs tabular-nums" style={{ color: 'var(--text-tertiary)' }}>
-          {members.length} / {TIER_LIMITS[tier] === Infinity ? '\u221e' : TIER_LIMITS[tier]} members
+          {members.length} members
         </span>
       </div>
 
-      {/* Tier limit banner */}
-      {tierLimitHit && (
+      {/* Member limit banner */}
+      {limitHit && (
         <div
           className="flex items-center gap-3 mb-4 px-4 py-3 rounded-lg text-sm"
           style={{ background: 'var(--yellow-muted)', border: '1px solid rgba(234, 179, 8, 0.3)' }}
         >
           <span style={{ color: 'var(--text-primary)' }}>
-            You&apos;ve reached the member limit for the <strong>{tier}</strong> tier.
+            Member limit reached. Adjust the <code>MAX_MEMBERS_PER_ORG</code> environment variable to increase.
           </span>
-          <a
-            href="/settings"
-            className="shrink-0 text-xs font-medium px-3 py-1 rounded-md transition-colors"
-            style={{ color: 'var(--accent-text)', background: 'var(--accent-muted)' }}
-          >
-            Upgrade Plan
-          </a>
           <button
-            onClick={() => setTierLimitHit(false)}
+            onClick={() => setLimitHit(false)}
             className="shrink-0 text-xs px-1 ml-auto"
             style={{ color: 'var(--text-tertiary)' }}
           >

@@ -2,13 +2,6 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useOrg } from '@/lib/org-context';
-import type { OrgTier } from '@clawhuddle/shared';
-
-const TIER_BADGE: Record<OrgTier, { label: string; color: string; bg: string }> = {
-  free: { label: 'FREE', color: 'var(--text-tertiary)', bg: 'var(--bg-tertiary)' },
-  pro: { label: 'PRO', color: 'var(--yellow)', bg: 'var(--yellow-muted)' },
-  enterprise: { label: 'ENT', color: 'var(--purple)', bg: 'var(--purple-muted)' },
-};
 
 function OrgAvatar({ name, size = 28 }: { name: string; size?: number }) {
   const initial = (name || '?')[0].toUpperCase();
@@ -43,8 +36,6 @@ export function OrgSwitcher() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const tierBadge = currentOrg?.tier ? TIER_BADGE[currentOrg.tier] : TIER_BADGE.free;
-
   const content = (
     <div className="flex items-center gap-2.5 min-w-0">
       <OrgAvatar name={currentOrg?.name || ''} />
@@ -55,20 +46,12 @@ export function OrgSwitcher() {
         >
           Workspace
         </p>
-        <div className="flex items-center gap-1.5">
-          <p
-            className="text-[13px] font-semibold leading-tight truncate"
-            style={{ color: 'var(--text-primary)' }}
-          >
-            {currentOrg?.name || 'Select workspace'}
-          </p>
-          <span
-            className="inline-flex px-1.5 py-0 rounded text-[9px] font-bold uppercase leading-[16px] shrink-0"
-            style={{ background: tierBadge.bg, color: tierBadge.color }}
-          >
-            {tierBadge.label}
-          </span>
-        </div>
+        <p
+          className="text-[13px] font-semibold leading-tight truncate"
+          style={{ color: 'var(--text-primary)' }}
+        >
+          {currentOrg?.name || 'Select workspace'}
+        </p>
       </div>
     </div>
   );
@@ -134,15 +117,6 @@ export function OrgSwitcher() {
               >
                 <OrgAvatar name={org.name} size={22} />
                 <span className="truncate font-medium">{org.name}</span>
-                <span
-                  className="inline-flex px-1 rounded text-[8px] font-bold uppercase leading-[14px]"
-                  style={{
-                    background: TIER_BADGE[org.tier || 'free'].bg,
-                    color: TIER_BADGE[org.tier || 'free'].color,
-                  }}
-                >
-                  {TIER_BADGE[org.tier || 'free'].label}
-                </span>
                 <span className="ml-auto text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
                   {org.member_role}
                 </span>
