@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { apiFetch } from '@/lib/api';
 import { useToast } from '@/components/ui/toast';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { useSuperAdmin } from '@/lib/use-super-admin';
 import type { Organization } from '@clawhuddle/shared';
 
@@ -19,6 +20,7 @@ export default function SuperAdminPage() {
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const isSuperAdmin = useSuperAdmin();
+  const confirm = useConfirm();
 
   const fetchOrgs = () => {
     if (!userId || !isSuperAdmin) return;
@@ -36,7 +38,13 @@ export default function SuperAdminPage() {
 
   const deleteOrg = async (org: OrgWithCount) => {
     if (!userId) return;
-    if (!confirm(`Delete "${org.name}"? This will remove all members, gateways, and data. This cannot be undone.`)) return;
+    const confirmed = await confirm({
+      title: `Delete "${org.name}"?`,
+      description: 'This will permanently remove all members, gateways, and data. This cannot be undone.',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!confirmed) return;
     setDeletingId(org.id);
     try {
       await apiFetch(`/api/super-admin/orgs/${org.id}`, {
