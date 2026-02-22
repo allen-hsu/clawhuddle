@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { getDb } from "../db/index.js";
 import { getOrgAllApiKeys } from "../routes/org/api-keys.js";
-import { generateOpenClawConfig, type ChannelTokens } from "./openclaw-config.js";
+import { generateOpenClawConfig, mergeOpenClawConfig, type ChannelTokens } from "./openclaw-config.js";
 import { installSkillsForUser } from "./skill-installer.js";
 import type { Skill, OrgMember } from "@clawhuddle/shared";
 import { PROVIDERS } from "@clawhuddle/shared";
@@ -523,18 +523,26 @@ export async function redeployGateway(orgId: string, memberId: string) {
 
   // Update config (keep existing token; skills installed as directories)
   const skills = getMemberSkills(orgId, member.user_id);
-  const config = generateOpenClawConfig({
+  const gatewayDir = getGatewayDir(orgId, member.user_id);
+  const configPath = path.join(gatewayDir, "openclaw.json");
+  const configOptions = {
     port: GATEWAY_INTERNAL_PORT,
     token: member.gateway_token,
     activeProviderIds: providerIds,
     modelOverrides,
     channelTokens,
-  });
-  const gatewayDir = getGatewayDir(orgId, member.user_id);
-  fs.writeFileSync(
-    path.join(gatewayDir, "openclaw.json"),
-    JSON.stringify(config, null, 2),
-  );
+  };
+
+  // Merge into existing config to preserve user customizations;
+  // fall back to fresh generation if no existing config is found.
+  let config;
+  try {
+    const existing = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    config = mergeOpenClawConfig(existing, configOptions);
+  } catch {
+    config = generateOpenClawConfig(configOptions);
+  }
+  fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 
   // Install skill directories
   await installSkillsForUser(path.join(orgId, member.user_id), skills);

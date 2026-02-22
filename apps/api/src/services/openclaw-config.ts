@@ -153,3 +153,55 @@ export function generateOpenClawConfig(options: {
 
   return config;
 }
+
+/**
+ * Merge platform-managed fields into an existing OpenClaw config,
+ * preserving any user customizations (custom agent settings, extra fields, etc.).
+ */
+export function mergeOpenClawConfig(
+  existing: Record<string, unknown>,
+  options: Parameters<typeof generateOpenClawConfig>[0],
+): OpenClawConfig {
+  const generated = generateOpenClawConfig(options);
+
+  // Deep clone existing to avoid mutation
+  const merged = JSON.parse(JSON.stringify(existing)) as Record<string, unknown>;
+
+  // Platform-managed: meta
+  merged.meta = generated.meta;
+
+  // Platform-managed: gateway auth, port, bind, controlUi, trustedProxies
+  // (preserve any user-added gateway fields like custom mode settings)
+  if (typeof merged.gateway !== 'object' || merged.gateway === null) {
+    merged.gateway = {};
+  }
+  const gw = merged.gateway as Record<string, unknown>;
+  gw.auth = generated.gateway.auth;
+  gw.port = generated.gateway.port;
+  gw.bind = generated.gateway.bind;
+  gw.controlUi = generated.gateway.controlUi;
+  gw.trustedProxies = generated.gateway.trustedProxies;
+
+  // Platform-managed: agents.defaults.model + agents.defaults.models
+  if (generated.agents) {
+    if (typeof merged.agents !== 'object' || merged.agents === null) {
+      merged.agents = {};
+    }
+    (merged.agents as Record<string, unknown>).defaults = generated.agents.defaults;
+  } else if (merged.agents && typeof merged.agents === 'object') {
+    // No active providers — clear managed defaults but preserve other agent settings
+    delete (merged.agents as Record<string, unknown>).defaults;
+  }
+
+  // Platform-managed: channels
+  if (generated.channels) {
+    merged.channels = generated.channels;
+  } else {
+    delete merged.channels;
+  }
+
+  // Platform-managed: plugins.entries
+  merged.plugins = generated.plugins;
+
+  return merged as unknown as OpenClawConfig;
+}
