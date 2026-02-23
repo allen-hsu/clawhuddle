@@ -6,6 +6,7 @@ services:
       - "--providers.docker.exposedbydefault=false"
       - "--providers.docker.network=${DOCKER_NETWORK:-clawhuddle-net}"
       - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.forwardedHeaders.insecure=true"
     ports:
       - "8080:80"
     volumes:
