@@ -46,6 +46,7 @@ export interface OpenClawConfig {
     auth: {
       mode: string;
       token: string;
+      skipDevicePairingForTrustedProxy?: boolean;
     };
     trustedProxies?: string[];
   };
