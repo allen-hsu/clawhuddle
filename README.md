@@ -112,13 +112,21 @@ RESEND_API_KEY=re_xxxx
 EMAIL_FROM=ClawHuddle <noreply@yourdomain.com>
 ```
 
-4. **Build the gateway image**
+4. **Configure the frontend API URL**
+
+```bash
+echo "NEXT_PUBLIC_API_URL=http://localhost:4000" >> apps/web/.env.local
+```
+
+> Next.js only reads env files from its own directory. `NEXT_PUBLIC_API_URL` must be set here so the frontend knows where to reach the API server.
+
+5. **Build the gateway image**
 
 ```bash
 docker build -t clawhuddle-gateway:local docker/gateway
 ```
 
-5. **Start development servers**
+6. **Start development servers**
 
 ```bash
 npm run dev
