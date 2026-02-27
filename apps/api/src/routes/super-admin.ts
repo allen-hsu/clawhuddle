@@ -1,17 +1,16 @@
 import { FastifyInstance } from 'fastify';
+import { v4 as uuid } from 'uuid';
 import { getDb } from '../db/index.js';
 import { authPlugin } from '../middleware/auth.js';
 import { deleteOrgGateways } from '../services/gateway.js';
 import { purgeOrgFromDb } from './orgs.js';
-
-const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL;
 
 export async function superAdminRoutes(app: FastifyInstance) {
   await app.register(authPlugin);
 
   // Guard: every route in this scope requires super admin
   app.addHook('onRequest', async (request, reply) => {
-    if (request.currentUser?.email !== SUPER_ADMIN_EMAIL) {
+    if (request.currentUser?.email !== process.env.SUPER_ADMIN_EMAIL) {
       return reply.status(403).send({ error: 'forbidden', message: 'Super admin only' });
     }
   });
@@ -74,4 +73,61 @@ export async function superAdminRoutes(app: FastifyInstance) {
   app.get('/api/super-admin/check', async () => {
     return { data: { isSuperAdmin: true } };
   });
+
+  // --- Access allowlist rules ---
+
+  // List all access rules
+  app.get('/api/super-admin/access-rules', async () => {
+    const db = getDb();
+    const rules = db.prepare('SELECT * FROM access_allowlist ORDER BY created_at DESC').all();
+    return { data: rules };
+  });
+
+  // Add an access rule
+  app.post<{ Body: { type: string; value: string } }>(
+    '/api/super-admin/access-rules',
+    async (request, reply) => {
+      const { type, value } = request.body;
+
+      if (!type || !value) {
+        return reply.status(400).send({ error: 'validation', message: 'type and value are required' });
+      }
+      if (type !== 'domain' && type !== 'email') {
+        return reply.status(400).send({ error: 'validation', message: 'type must be "domain" or "email"' });
+      }
+
+      const db = getDb();
+      const id = uuid();
+      const normalized = value.toLowerCase().trim();
+
+      try {
+        db.prepare('INSERT INTO access_allowlist (id, type, value) VALUES (?, ?, ?)').run(id, type, normalized);
+      } catch (err: any) {
+        if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+          return reply.status(409).send({ error: 'conflict', message: 'Rule already exists' });
+        }
+        throw err;
+      }
+
+      const rule = db.prepare('SELECT * FROM access_allowlist WHERE id = ?').get(id);
+      return { data: rule };
+    }
+  );
+
+  // Delete an access rule
+  app.delete<{ Params: { id: string } }>(
+    '/api/super-admin/access-rules/:id',
+    async (request, reply) => {
+      const { id } = request.params;
+      const db = getDb();
+
+      const rule = db.prepare('SELECT id FROM access_allowlist WHERE id = ?').get(id);
+      if (!rule) {
+        return reply.status(404).send({ error: 'not_found', message: 'Rule not found' });
+      }
+
+      db.prepare('DELETE FROM access_allowlist WHERE id = ?').run(id);
+      return { data: { deleted: true } };
+    }
+  );
 }

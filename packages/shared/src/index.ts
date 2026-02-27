@@ -111,6 +111,10 @@ export interface ImportSkillsRequest {
   skills: { name: string; git_path: string }[];
 }
 
+export interface BatchUpdateUserSkillsRequest {
+  skills: { id: string; enabled: boolean }[];
+}
+
 // === Provider Registry ===
 
 export type CredentialType = 'api_key' | 'token' | 'oauth';

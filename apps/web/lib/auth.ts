@@ -30,12 +30,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   ],
   callbacks: {
     async signIn({ user }) {
-      const allowedDomain = process.env.ALLOWED_DOMAIN;
-      if (allowedDomain && user.email) {
-        const domains = allowedDomain.split(',').map((d) => d.trim());
-        return domains.some((d) => user.email!.endsWith(`@${d}`));
+      if (!user.email) return true;
+      try {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || process.env.API_URL || 'http://localhost:4000';
+        const res = await fetch(`${apiUrl}/api/auth/check-access?email=${encodeURIComponent(user.email)}`);
+        if (res.ok) {
+          const data = await res.json();
+          return data.allowed;
+        }
+        // If API is unreachable, allow sign-in to avoid lockout
+        return true;
+      } catch {
+        return true;
       }
-      return true;
     },
     async jwt({ token, user }) {
       if (user) {

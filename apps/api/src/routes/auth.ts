@@ -4,6 +4,36 @@ import { v4 as uuid } from 'uuid';
 import type { AcceptInviteRequest } from '@clawhuddle/shared';
 
 export async function authRoutes(app: FastifyInstance) {
+  // Check if an email is allowed to sign in (public — called by NextAuth signIn callback)
+  app.get<{ Querystring: { email: string } }>(
+    '/api/auth/check-access',
+    async (request, reply) => {
+      const { email } = request.query;
+      if (!email) {
+        return reply.status(400).send({ error: 'validation', message: 'email is required' });
+      }
+
+      const db = getDb();
+      const rules = db.prepare('SELECT type, value FROM access_allowlist').all() as { type: string; value: string }[];
+
+      // No rules = open registration
+      if (rules.length === 0) {
+        return { allowed: true };
+      }
+
+      const normalizedEmail = email.toLowerCase().trim();
+      const domain = normalizedEmail.split('@')[1];
+
+      const allowed = rules.some((rule) => {
+        if (rule.type === 'email') return rule.value === normalizedEmail;
+        if (rule.type === 'domain') return domain === rule.value;
+        return false;
+      });
+
+      return { allowed };
+    }
+  );
+
   // Called by NextAuth on login to sync user
   app.post<{ Body: { email: string; name?: string; avatar_url?: string } }>(
     '/api/auth/login',

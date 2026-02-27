@@ -77,6 +77,15 @@ CREATE TABLE IF NOT EXISTS api_keys (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Access allowlist (empty = open registration)
+CREATE TABLE IF NOT EXISTS access_allowlist (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,    -- 'domain' or 'email'
+    value TEXT NOT NULL,   -- e.g. 'company.com' or 'xxx@gmail.com'
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(type, value)
+);
+
 -- Usage logs
 CREATE TABLE IF NOT EXISTS usage_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
