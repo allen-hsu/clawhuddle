@@ -142,13 +142,14 @@ export default function SuperAdminPage() {
   }
 
   return (
-    <div className="flex-1 p-8 max-w-4xl mx-auto w-full">
+    <div className="flex-1 overflow-y-auto p-8 max-w-4xl mx-auto w-full">
       <h1 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
         Super Admin
       </h1>
       <p className="text-xs mb-6" style={{ color: 'var(--text-tertiary)' }}>
         Manage access rules and organizations
       </p>
+
 
       {/* Access Rules Section */}
       <h2 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>
