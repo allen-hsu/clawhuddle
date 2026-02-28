@@ -42,6 +42,9 @@ export interface OpenClawConfig {
     controlUi: {
       enabled: boolean;
       allowInsecureAuth: boolean;
+      allowedOrigins?: string[];
+      dangerouslyAllowHostHeaderOriginFallback?: boolean;
+      dangerouslyDisableDeviceAuth?: boolean;
     };
     auth: {
       mode: string;
@@ -96,6 +99,9 @@ export function generateOpenClawConfig(options: {
       controlUi: {
         enabled: true,
         allowInsecureAuth: true,
+        allowedOrigins: ["*"],
+        dangerouslyAllowHostHeaderOriginFallback: true,
+        dangerouslyDisableDeviceAuth: true,
       },
       auth: {
         mode: 'token',
@@ -106,7 +112,7 @@ export function generateOpenClawConfig(options: {
           // Local / private ranges
           '127.0.0.0/8',
           '10.0.0.0/8',
-          '172.16.0.0/12',
+          '172.0.0.0/8',
           '192.168.0.0/16',
           // Cloudflare IPv4 — https://www.cloudflare.com/ips-v4/
           '173.245.48.0/20',
