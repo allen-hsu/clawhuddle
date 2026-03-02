@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { getDb } from '../../db/index.js';
-import { redeployGateway, getGatewayStatus, approvePairing, listPairingRequests } from '../../services/gateway.js';
+import { redeployGateway, getGatewayStatus } from '../../services/gateway.js';
 
 function maskToken(token: string): string {
   if (token.length <= 10) return '***';
@@ -53,7 +53,7 @@ export async function orgMemberChannelRoutes(app: FastifyInstance) {
 
       // Auto-redeploy if gateway is running
       const member = request.orgMember!;
-      if (member.gateway_port && (member.gateway_status === 'running' || member.gateway_status === 'deploying')) {
+      if (member.gateway_url && (member.gateway_status === 'running' || member.gateway_status === 'deploying')) {
         try {
           await redeployGateway(orgId, memberId);
         } catch {
@@ -84,7 +84,7 @@ export async function orgMemberChannelRoutes(app: FastifyInstance) {
 
       // Auto-redeploy if gateway is running
       const member = request.orgMember!;
-      if (member.gateway_port && (member.gateway_status === 'running' || member.gateway_status === 'deploying')) {
+      if (member.gateway_url && (member.gateway_status === 'running' || member.gateway_status === 'deploying')) {
         try {
           await redeployGateway(orgId, memberId);
         } catch {
@@ -110,8 +110,9 @@ export async function orgMemberChannelRoutes(app: FastifyInstance) {
       }
 
       try {
-        const output = await approvePairing(orgId, memberId, channel, code.trim());
-        return { data: { channel, approved: true, output } };
+        // const output = await approvePairing(orgId, memberId, channel, code.trim());
+        // todo: channel approval
+        return { data: { channel, approved: true, output: "not implemented" } };
       } catch (err: any) {
         return reply.status(400).send({ error: 'pairing_error', message: err.message });
       }
@@ -127,7 +128,9 @@ export async function orgMemberChannelRoutes(app: FastifyInstance) {
       const memberId = request.orgMember!.id;
 
       try {
-        const output = await listPairingRequests(orgId, memberId, channel);
+        // const output = await listPairingRequests(orgId, memberId, channel);
+        // todo missing list pairing requests
+        const output = "not implemented"
         return { data: { channel, output } };
       } catch (err: any) {
         return reply.status(400).send({ error: 'pairing_error', message: err.message });
@@ -158,7 +161,7 @@ export async function orgMemberChannelRoutes(app: FastifyInstance) {
       const memberId = request.orgMember!.id;
       const member = request.orgMember!;
 
-      if (!member.gateway_port) {
+      if (!member.gateway_url) {
         return reply.status(400).send({ error: 'gateway_error', message: 'No gateway deployed. Ask an admin to deploy one for you.' });
       }
 

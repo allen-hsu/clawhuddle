@@ -66,7 +66,7 @@ export async function orgUserSkillRoutes(app: FastifyInstance) {
 
       // Auto-redeploy if gateway is running or deploying
       const member = request.orgMember!;
-      if (member.gateway_port && (member.gateway_status === 'running' || member.gateway_status === 'deploying')) {
+      if (member.gateway_url && (member.gateway_status === 'running' || member.gateway_status === 'deploying')) {
         try {
           await redeployGateway(orgId, memberId);
         } catch {

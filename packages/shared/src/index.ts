@@ -21,10 +21,10 @@ export interface OrgMember {
   user_id: string;
   role: 'owner' | 'admin' | 'member';
   status: 'active' | 'disabled';
-  gateway_port: number | null;
   gateway_status: 'running' | 'stopped' | 'deploying' | 'provisioning' | null;
   gateway_token: string | null;
-  gateway_subdomain: string | null;
+  gateway_url: string | null;
+  gateway_service_name: string | null;
   joined_at: string;
   email?: string;
   name?: string;

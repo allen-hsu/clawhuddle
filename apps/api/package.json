@@ -16,6 +16,7 @@
     "@clawhuddle/shared": "*",
     "@fastify/cors": "^10.0.0",
     "@fastify/websocket": "^11.0.0",
+    "@google-cloud/run": "^3.2.0",
     "better-sqlite3": "^11.8.0",
     "dockerode": "^4.0.9",
     "dotenv": "^16.4.0",

@@ -17,6 +17,7 @@
     "typescript": "^5.7.0"
   },
   "dependencies": {
+    "@clawhuddle/shared": "^0.1.0",
     "fastify-plugin": "^5.1.0"
   }
 }

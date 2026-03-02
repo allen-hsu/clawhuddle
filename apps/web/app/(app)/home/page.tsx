@@ -194,13 +194,8 @@ function DashboardView() {
 
   const openGateway = () => {
     if (!me?.gateway_token) return;
-    const { protocol, hostname } = window.location;
-    if (hostname === 'localhost' && me.gateway_port) {
-      window.open(`http://localhost:${me.gateway_port}/?token=${me.gateway_token}`, '_blank');
-    } else if (me.gateway_subdomain) {
-      const gwDomain = process.env.NEXT_PUBLIC_GATEWAY_DOMAIN || hostname;
-      window.open(`${protocol}//${me.gateway_subdomain}.${gwDomain}/?token=${me.gateway_token}`, '_blank');
-    }
+    // todo attach token
+    window.open(`${me.gateway_url}`)
   };
 
   if (loading || !ready) {

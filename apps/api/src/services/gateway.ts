@@ -9,53 +9,27 @@ import { installSkillsForUser } from "./skill-installer.js";
 import type { Skill, OrgMember } from "@clawhuddle/shared";
 import { PROVIDERS } from "@clawhuddle/shared";
 
+const {ServicesClient} = require('@google-cloud/run').v2;
+
+const runClient = new ServicesClient();
+
+const GCP_PROJECT = process.env.GCP_PROJECT;
+const GCP_LOCATION = process.env.GCP_LOCATION;
+const SERVICE_PARENT = "projects/" + GCP_PROJECT + "/locations/" + GCP_LOCATION;
+
 const docker = new Docker();
 
 const GATEWAY_IMAGE = "clawhuddle-gateway:local";
 // OpenClaw listens on loopback:6100; socat bridges external traffic on 0.0.0.0:6101
-const GATEWAY_INTERNAL_PORT = 6100;
-const GATEWAY_EXTERNAL_PORT = 6101;
 const CONTAINER_PREFIX = "clawhuddle-gw-";
-const DOCKER_NETWORK = process.env.DOCKER_NETWORK || "clawhuddle-net";
-const DOMAIN = process.env.DOMAIN || "localhost";
-const GATEWAY_DOMAIN = process.env.GATEWAY_DOMAIN || DOMAIN;
 
-async function ensureNetwork(): Promise<void> {
-  try {
-    await docker.getNetwork(DOCKER_NETWORK).inspect();
-  } catch {
-    await docker.createNetwork({ Name: DOCKER_NETWORK, Driver: "bridge" });
-  }
-}
+async function checkGatewayHealth(gateway_url: string): Promise<boolean> {
+  let res = false;
+  fetch(gateway_url)
+      .then(r=>(r.ok||r.status===401)?res=true:res=false)
+      .catch(()=>res=false)
 
-async function checkGatewayHealth(containerName: string): Promise<boolean> {
-  try {
-    const container = docker.getContainer(containerName);
-    const exec = await container.exec({
-      Cmd: [
-        "node",
-        "-e",
-        `fetch('http://127.0.0.1:${GATEWAY_INTERNAL_PORT}/').then(r=>(r.ok||r.status===401)?process.exit(0):process.exit(1)).catch(()=>process.exit(1))`,
-      ],
-      AttachStdout: true,
-      AttachStderr: true,
-    });
-    const stream = await exec.start({});
-    return new Promise<boolean>((resolve) => {
-      stream.resume();
-      stream.on("end", async () => {
-        try {
-          const info = await exec.inspect();
-          resolve(info.ExitCode === 0);
-        } catch {
-          resolve(false);
-        }
-      });
-      setTimeout(() => resolve(false), 5000);
-    });
-  } catch {
-    return false;
-  }
+  return res
 }
 
 function getDataDir(): string {
@@ -75,9 +49,6 @@ function getHostDataDir(): string {
   return dir;
 }
 
-function getGatewayDir(orgId: string, userId: string): string {
-  return path.join(getDataDir(), "gateways", orgId, userId);
-}
 
 function getHostGatewayDir(orgId: string, userId: string): string {
   return path.join(getHostDataDir(), "gateways", orgId, userId);
@@ -89,8 +60,8 @@ function getContainerName(orgId: string, userId: string): string {
 }
 
 // Gateway subdomain: "claw-{hex}" under parent domain
-function generateSubdomain(): string {
-  return `claw-${crypto.randomBytes(4).toString("hex")}`;
+function generateServiceName(orgId: string, memberId: string): string {
+  return `claw-${orgId}-${memberId.slice(0,8)}-${crypto.randomBytes(4).toString("hex")}`;
 }
 
 function getMember(
@@ -132,187 +103,135 @@ function getMemberChannelTokens(memberId: string): ChannelTokens {
   return tokens;
 }
 
-function createTraefikLabels(
-  containerName: string,
-  subdomain: string,
-): Record<string, string> {
-  return {
-    "traefik.enable": "true",
-    [`traefik.http.routers.${containerName}.rule`]: `Host(\`${subdomain}.${GATEWAY_DOMAIN}\`)`,
-    [`traefik.http.routers.${containerName}.entrypoints`]: "web",
-    // Traefik connects to socat port (0.0.0.0:6101) which forwards to OpenClaw loopback port
-    [`traefik.http.services.${containerName}.loadbalancer.server.port`]: String(
-      GATEWAY_EXTERNAL_PORT,
-    ),
-    // Override proxy headers so OpenClaw sees a local connection and auto-approves device pairing
-    [`traefik.http.middlewares.${containerName}-headers.headers.customrequestheaders.X-Forwarded-For`]:
-      "127.0.0.1",
-    [`traefik.http.middlewares.${containerName}-headers.headers.customrequestheaders.X-Real-IP`]:
-      "127.0.0.1",
-    [`traefik.http.middlewares.${containerName}-headers.headers.customrequestheaders.X-Forwarded-Proto`]:
-      "",
-    // Strip Cloudflare proxy headers
-    [`traefik.http.middlewares.${containerName}-headers.headers.customrequestheaders.CF-Connecting-IP`]:
-      "",
-    [`traefik.http.middlewares.${containerName}-headers.headers.customrequestheaders.True-Client-IP`]:
-      "",
-    [`traefik.http.middlewares.${containerName}-headers.headers.customrequestheaders.CF-IPCountry`]:
-      "",
-    [`traefik.http.middlewares.${containerName}-headers.headers.customrequestheaders.CF-Ray`]:
-      "",
-    [`traefik.http.middlewares.${containerName}-headers.headers.customrequestheaders.CF-Visitor`]:
-      "",
-    [`traefik.http.routers.${containerName}.middlewares`]: `${containerName}-headers`,
-  };
-}
-
 /**
  * Writes auth-profiles.json for a gateway so OpenClaw reads credentials
  * from the file (hot-reloaded) instead of env vars.
  * Returns the list of provider IDs that have credentials configured.
  */
-function writeAuthProfiles(orgId: string, userId: string): { providerIds: string[]; modelOverrides: Record<string, string> } {
-  const allKeys = getOrgAllApiKeys(orgId);
-  const profiles: Record<string, Record<string, unknown>> = {};
-  const providerIds: string[] = [];
-  const modelOverrides: Record<string, string> = {};
-
-  for (const { provider, key, credential_type, default_model } of allKeys) {
-    const providerConfig = PROVIDERS.find((p) => p.id === provider);
-    if (!providerConfig) continue;
-    providerIds.push(provider);
-    if (default_model) modelOverrides[provider] = default_model;
-
-    if (credential_type === "oauth") {
-      // key is a JSON blob — Codex format: { tokens: { access_token, refresh_token, ... } }
-      try {
-        const oauth = JSON.parse(key);
-        const tokens = oauth.tokens ?? oauth;
-        if (!tokens.access_token || !tokens.refresh_token) continue;
-
-        // Extract expiry from JWT payload (middle segment)
-        let expires: number | undefined;
-        try {
-          const payload = JSON.parse(
-            Buffer.from(tokens.access_token.split(".")[1], "base64").toString(),
-          );
-          if (payload.exp) expires = payload.exp;
-        } catch {
-          /* non-JWT or malformed — skip expires */
-        }
-
-        profiles[`${provider}:oauth`] = {
-          type: "oauth",
-          provider,
-          access: tokens.access_token,
-          refresh: tokens.refresh_token,
-          ...(expires ? { expires } : {}),
-        };
-      } catch {
-        // Skip malformed OAuth JSON
-        continue;
-      }
-    } else if (credential_type === "token") {
-      profiles[`${provider}:setup-token`] = {
-        type: "token",
-        provider,
-        token: key,
-      };
-    } else {
-      profiles[`${provider}:manual`] = { type: "api_key", provider, key };
-    }
-  }
-
-  const authProfilesPath = path.join(
-    getGatewayDir(orgId, userId),
-    "agents",
-    "main",
-    "agent",
-    "auth-profiles.json",
-  );
-  fs.mkdirSync(path.dirname(authProfilesPath), { recursive: true });
-  fs.writeFileSync(
-    authProfilesPath,
-    JSON.stringify({ version: 1, profiles }, null, 2),
-  );
-
-  return { providerIds, modelOverrides };
-}
+// function writeAuthProfiles(orgId: string, userId: string): { providerIds: string[]; modelOverrides: Record<string, string> } {
+//   const allKeys = getOrgAllApiKeys(orgId);
+//   const profiles: Record<string, Record<string, unknown>> = {};
+//   const providerIds: string[] = [];
+//   const modelOverrides: Record<string, string> = {};
+//
+//   for (const { provider, key, credential_type, default_model } of allKeys) {
+//     const providerConfig = PROVIDERS.find((p) => p.id === provider);
+//     if (!providerConfig) continue;
+//     providerIds.push(provider);
+//     if (default_model) modelOverrides[provider] = default_model;
+//
+//     if (credential_type === "oauth") {
+//       // key is a JSON blob — Codex format: { tokens: { access_token, refresh_token, ... } }
+//       try {
+//         const oauth = JSON.parse(key);
+//         const tokens = oauth.tokens ?? oauth;
+//         if (!tokens.access_token || !tokens.refresh_token) continue;
+//
+//         // Extract expiry from JWT payload (middle segment)
+//         let expires: number | undefined;
+//         try {
+//           const payload = JSON.parse(
+//             Buffer.from(tokens.access_token.split(".")[1], "base64").toString(),
+//           );
+//           if (payload.exp) expires = payload.exp;
+//         } catch {
+//           /* non-JWT or malformed — skip expires */
+//         }
+//
+//         profiles[`${provider}:oauth`] = {
+//           type: "oauth",
+//           provider,
+//           access: tokens.access_token,
+//           refresh: tokens.refresh_token,
+//           ...(expires ? { expires } : {}),
+//         };
+//       } catch {
+//         // Skip malformed OAuth JSON
+//         continue;
+//       }
+//     } else if (credential_type === "token") {
+//       profiles[`${provider}:setup-token`] = {
+//         type: "token",
+//         provider,
+//         token: key,
+//       };
+//     } else {
+//       profiles[`${provider}:manual`] = { type: "api_key", provider, key };
+//     }
+//   }
+//
+//   const authProfilesPath = path.join(
+//     getGatewayDir(orgId, userId),
+//     "agents",
+//     "main",
+//     "agent",
+//     "auth-profiles.json",
+//   );
+//   fs.mkdirSync(path.dirname(authProfilesPath), { recursive: true });
+//   fs.writeFileSync(
+//     authProfilesPath,
+//     JSON.stringify({ version: 1, profiles }, null, 2),
+//   );
+//
+//   return { providerIds, modelOverrides };
+// }
 
 /**
  * Live-update auth-profiles.json for all running gateways in an org.
  * Called after API key add/delete so credentials propagate without container restart.
  */
 export function syncAuthProfiles(orgId: string): void {
-  const db = getDb();
-  const runningMembers = db
-    .prepare(
-      `SELECT om.user_id FROM org_members om
-     WHERE om.org_id = ? AND om.gateway_status IN ('running', 'deploying')`,
-    )
-    .all(orgId) as { user_id: string }[];
-
-  for (const { user_id } of runningMembers) {
-    const gatewayDir = getGatewayDir(orgId, user_id);
-    if (fs.existsSync(gatewayDir)) {
-      writeAuthProfiles(orgId, user_id);
-    }
-  }
+  // todo: sync api key to service storage
+  // const db = getDb();
+  // const runningMembers = db
+  //   .prepare(
+  //     `SELECT om.user_id FROM org_members om
+  //    WHERE om.org_id = ? AND om.gateway_status IN ('running', 'deploying')`,
+  //   )
+  //   .all(orgId) as { user_id: string }[];
+  //
+  // for (const { user_id } of runningMembers) {
+  //   const gatewayDir = getGatewayDir(orgId, user_id);
+  //   if (fs.existsSync(gatewayDir)) {
+  //     writeAuthProfiles(orgId, user_id);
+  //   }
+  // }
 }
 
-const IS_LOCAL_DEV = DOMAIN === "localhost";
-
-function createContainerConfig(
-  containerName: string,
-  subdomain: string,
-  orgId: string,
-  userId: string,
-) {
-  const hostConfig: Record<string, any> = {
-    Binds: [`${getHostGatewayDir(orgId, userId)}:/root/.openclaw`],
-    RestartPolicy: { Name: "unless-stopped" },
-  };
-
-  // Local dev: publish socat port so gateway is accessible without Traefik
-  if (IS_LOCAL_DEV) {
-    hostConfig.PortBindings = {
-      [`${GATEWAY_EXTERNAL_PORT}/tcp`]: [{ HostPort: "0" }], // 0 = random available port
-    };
-  }
-
-  return {
-    Image: GATEWAY_IMAGE,
-    name: containerName,
-    Env: [],
-    Labels: createTraefikLabels(containerName, subdomain),
-    ExposedPorts: { [`${GATEWAY_EXTERNAL_PORT}/tcp`]: {} },
-    HostConfig: hostConfig,
-    NetworkingConfig: {
-      EndpointsConfig: {
-        [DOCKER_NETWORK]: {},
-      },
-    },
-  };
-}
-
-// After container starts, read the actual host port Docker allocated
-async function getHostPort(containerName: string): Promise<number | null> {
-  if (!IS_LOCAL_DEV) return null;
-  try {
-    const container = docker.getContainer(containerName);
-    const info = await container.inspect();
-    const portBindings =
-      info.NetworkSettings.Ports[`${GATEWAY_EXTERNAL_PORT}/tcp`];
-    return portBindings?.[0]?.HostPort
-      ? Number(portBindings[0].HostPort)
-      : null;
-  } catch {
-    return null;
-  }
-}
+// function createContainerConfig(
+//   containerName: string,
+//   subdomain: string,
+//   orgId: string,
+//   userId: string,
+// ) {
+//   const hostConfig: Record<string, any> = {
+//     Binds: [`${getHostGatewayDir(orgId, userId)}:/root/.openclaw`],
+//     RestartPolicy: { Name: "unless-stopped" },
+//   };
+//
+//   // Local dev: publish socat port so gateway is accessible without Traefik
+//   if (IS_LOCAL_DEV) {
+//     hostConfig.PortBindings = {
+//       [`${GATEWAY_EXTERNAL_PORT}/tcp`]: [{ HostPort: "0" }], // 0 = random available port
+//     };
+//   }
+//
+//   return {
+//     Image: GATEWAY_IMAGE,
+//     name: containerName,
+//     Env: [],
+//     Labels: createTraefikLabels(containerName, subdomain),
+//     ExposedPorts: { [`${GATEWAY_EXTERNAL_PORT}/tcp`]: {} },
+//     HostConfig: hostConfig,
+//     NetworkingConfig: {
+//       EndpointsConfig: {
+//         [DOCKER_NETWORK]: {},
+//       },
+//     },
+//   };
+// }
 
 export async function provisionGateway(orgId: string, memberId: string) {
-  await ensureNetwork();
   const db = getDb();
   const member = getMember(orgId, memberId);
   if (
@@ -322,105 +241,130 @@ export async function provisionGateway(orgId: string, memberId: string) {
     throw new Error("Gateway already running");
   }
 
-  // Use fixed internal port, generate token and subdomain
-  const port = GATEWAY_INTERNAL_PORT;
+  // generate token and service name
   const token = crypto.randomBytes(24).toString("hex");
-  const subdomain = generateSubdomain();
+  const serviceName = generateServiceName(orgId, memberId);
 
-  // Create workspace directory
-  const gatewayDir = getGatewayDir(orgId, member.user_id);
-  fs.mkdirSync(gatewayDir, { recursive: true });
+  // todo: Assign unique dir in cloud storage(should be object storage) for agent
 
+  // todo: Assign key to agent
   // Write auth-profiles.json (credentials read from file, not env vars)
-  const { providerIds, modelOverrides } = writeAuthProfiles(orgId, member.user_id);
-  if (providerIds.length === 0)
-    throw new Error("No API keys configured — add at least one provider key");
+  // const { providerIds, modelOverrides } = writeAuthProfiles(orgId, member.user_id);
+  // if (providerIds.length === 0)
+  //   throw new Error("No API keys configured — add at least one provider key");
 
+  // todo: Assign skills
   // Get member's skills
-  const skills = getMemberSkills(orgId, member.user_id);
+  // const skills = getMemberSkills(orgId, member.user_id);
 
+  // todo: Assign channel tokens (e.g. Telegram bot token)
   // Read channel tokens (e.g. Telegram bot token)
-  const channelTokens = getMemberChannelTokens(memberId);
+  // const channelTokens = getMemberChannelTokens(memberId);
 
+  // todo: Generate config
   // Generate config
-  const config = generateOpenClawConfig({
-    port,
-    token,
-    activeProviderIds: providerIds,
-    modelOverrides,
-    channelTokens,
-  });
-  fs.writeFileSync(
-    path.join(gatewayDir, "openclaw.json"),
-    JSON.stringify(config, null, 2),
-  );
+  // const config = generateOpenClawConfig({
+  //   port,
+  //   token,
+  //   activeProviderIds: providerIds,
+  //   modelOverrides,
+  //   channelTokens,
+  // });
+  // fs.writeFileSync(
+  //   path.join(gatewayDir, "openclaw.json"),
+  //   JSON.stringify(config, null, 2),
+  // );
 
+  // todo: Install skill to Agent
   // Install skill directories (still keyed by userId for filesystem)
-  await installSkillsForUser(path.join(orgId, member.user_id), skills);
+  // await installSkillsForUser(path.join(orgId, member.user_id), skills);
 
   // Update DB with provisioning status + token + subdomain
   db.prepare(
-    "UPDATE org_members SET gateway_port = ?, gateway_status = ?, gateway_token = ?, gateway_subdomain = ? WHERE id = ?",
-  ).run(port, "provisioning", token, subdomain, memberId);
+    "UPDATE org_members SET gateway_status = ?, gateway_token = ? WHERE id = ?",
+  ).run("provisioning", token, memberId);
+
+  const createServiceRequest = {
+    parent: SERVICE_PARENT,
+    serviceId: serviceName,
+    service: {
+      description: "claw agent created by hatchery",
+      template: {
+        containers: [
+          {
+            image: "nginx:latest",
+            ports: [{containerPort: 80}]
+          }
+        ]
+      }
+    }
+  }
 
   try {
-    // Create and start Docker container
-    const containerName = getContainerName(orgId, member.user_id);
+    const [operation] = await runClient.createService(createServiceRequest);
+    const [response] = await operation.promise();
+    console.log("Create service" + serviceName + "with response: " + response)
 
-    // Remove existing container if any
-    try {
-      const existing = docker.getContainer(containerName);
-      await existing.stop().catch(() => {});
-      await existing.remove();
-    } catch {
-      // Container doesn't exist, that's fine
-    }
-
-    const container = await docker.createContainer(
-      createContainerConfig(containerName, subdomain, orgId, member.user_id),
-    );
-
-    await container.start();
-
-    // In local dev, read the actual host port Docker allocated
-    const actualPort = (await getHostPort(containerName)) || port;
-    if (actualPort !== port) {
-      db.prepare("UPDATE org_members SET gateway_port = ? WHERE id = ?").run(
-        actualPort,
+    db.prepare(
+        "UPDATE org_members SET gateway_status = ?, gateway_url = ?, gateway_service_name = ? WHERE id = ?",
+    ).run(
+        "provisioning",
+        response.uri,
+        serviceName,
         memberId,
-      );
-    }
-
-    // Mark as deploying — getGatewayStatus will promote to running after health check
-    db.prepare("UPDATE org_members SET gateway_status = ? WHERE id = ?").run(
-      "deploying",
-      memberId,
-    );
+    )
 
     return {
       memberId,
       userId: member.user_id,
-      gateway_port: actualPort,
-      gateway_status: "deploying" as const,
-      gateway_subdomain: subdomain,
-    };
+      gateway_status: "provisioning" as const,
+      gateway_url: response.uri
+    }
   } catch (err) {
-    // Rollback DB on failure
     db.prepare(
-      "UPDATE org_members SET gateway_port = NULL, gateway_status = NULL, gateway_subdomain = NULL WHERE id = ?",
+        "UPDATE org_members SET gateway_status = NULL, gateway_token = ? WHERE id = ?",
     ).run(memberId);
     throw err;
+  }
+}
+
+async function adjustServiceLimit(serviceName: string, expectedLimit: number) {
+  const request = {
+    service: {
+      name: `${SERVICE_PARENT}/services/${serviceName}`,
+      template: {
+        scaling: {
+          maxInstanceCount: expectedLimit,
+          minInstanceCount: expectedLimit,
+        },
+      },
+    },
+    updateMask: {
+      paths: ["template.scaling.max_instance_count", "template.scaling.min_instance_count"],
+    },
+  };
+
+  try {
+    const [operation] = await runClient.updateService(request);
+    const [response] = await operation.promise();
+    console.log("Update service" + serviceName + "with response: " + response)
+  } catch (error) {
+    console.error("Error update service:", error);
+    throw error;
   }
 }
 
 export async function stopGateway(orgId: string, memberId: string) {
   const db = getDb();
   const member = getMember(orgId, memberId);
-  if (!member.gateway_port) throw new Error("No gateway deployed");
+  if (!member.gateway_url || !member.gateway_service_name) throw new Error("No gateway deployed");
 
-  const containerName = getContainerName(orgId, member.user_id);
-  const container = docker.getContainer(containerName);
-  await container.stop();
+  try {
+    await adjustServiceLimit(member.gateway_service_name, 0);
+  } catch (error) {
+    console.error("Error adjust gateway service limit:", error);
+    throw error;
+  }
 
   db.prepare("UPDATE org_members SET gateway_status = ? WHERE id = ?").run(
     "stopped",
@@ -430,7 +374,7 @@ export async function stopGateway(orgId: string, memberId: string) {
   return {
     memberId,
     userId: member.user_id,
-    gateway_port: member.gateway_port,
+    gateway_url: member.gateway_url,
     gateway_status: "stopped" as const,
   };
 }
@@ -438,21 +382,24 @@ export async function stopGateway(orgId: string, memberId: string) {
 export async function startGateway(orgId: string, memberId: string) {
   const db = getDb();
   const member = getMember(orgId, memberId);
-  if (!member.gateway_port) throw new Error("No gateway deployed");
+  if (!member.gateway_url || !member.gateway_service_name) throw new Error("No gateway deployed");
 
-  const containerName = getContainerName(orgId, member.user_id);
-  const container = docker.getContainer(containerName);
-  await container.start();
+  try {
+    await adjustServiceLimit(member.gateway_service_name, 1);
+  } catch (error) {
+    console.error("Error adjust gateway service limit:", error);
+    throw error;
+  }
 
   db.prepare("UPDATE org_members SET gateway_status = ? WHERE id = ?").run(
-    "deploying",
-    memberId,
+      "deploying",
+      memberId,
   );
 
   return {
     memberId,
     userId: member.user_id,
-    gateway_port: member.gateway_port,
+    gateway_url: member.gateway_url,
     gateway_status: "deploying" as const,
   };
 }
@@ -460,163 +407,88 @@ export async function startGateway(orgId: string, memberId: string) {
 export async function removeGateway(orgId: string, memberId: string) {
   const db = getDb();
   const member = getMember(orgId, memberId);
-  if (!member.gateway_port) throw new Error("No gateway deployed");
+  if (!member.gateway_url || !member.gateway_service_name) throw new Error("No gateway deployed");
 
-  const containerName = getContainerName(orgId, member.user_id);
+  const request = {
+    name: SERVICE_PARENT + "/services/" + member.gateway_service_name
+  };
+
+  // todo: delete gateway service dir from object store
+
   try {
-    const container = docker.getContainer(containerName);
-    await container.stop().catch(() => {});
-    await container.remove();
-  } catch {
-    // Container may already be removed
-  }
-
-  // Delete workspace
-  const gatewayDir = getGatewayDir(orgId, member.user_id);
-  if (fs.existsSync(gatewayDir)) {
-    fs.rmSync(gatewayDir, { recursive: true });
+    const [operation] = await runClient.deleteService(request);
+    const [response] = await operation.promise();
+    console.log("Delete service" + member.gateway_service_name + "with response: " + response)
+  } catch (error) {
+    console.error("Error delete service:", error);
+    throw error;
   }
 
   // Reset DB fields
   db.prepare(
-    "UPDATE org_members SET gateway_port = NULL, gateway_status = NULL, gateway_token = NULL, gateway_subdomain = NULL WHERE id = ?",
+    "UPDATE org_members SET gateway_status = NULL, gateway_token = NULL, gateway_url = NULL, gateway_service_name = NULL WHERE id = ?",
   ).run(memberId);
 
   return {
     memberId,
     userId: member.user_id,
-    gateway_port: null,
     gateway_status: null,
-    gateway_subdomain: null,
+    gateway_url: null,
+    gateway_service_name: null,
   };
 }
 
 export async function redeployGateway(orgId: string, memberId: string) {
-  await ensureNetwork();
   const db = getDb();
   const member = getMember(orgId, memberId);
-  if (
-    !member.gateway_port ||
-    !member.gateway_token ||
-    !member.gateway_subdomain
-  )
+  if (!member.gateway_token || !member.gateway_url)
     throw new Error("No gateway deployed");
 
-  const containerName = getContainerName(orgId, member.user_id);
-
-  // Stop and remove old container
   try {
-    const existing = docker.getContainer(containerName);
-    await existing.stop().catch(() => {});
-    await existing.remove();
-  } catch {
-    // Container may not exist
+    console.log("Redeploying gateway for member:", memberId);
+    return await provisionGateway(orgId, memberId);
+  } catch (error) {
+    console.error("Error redeploy gateway:", error);
+    throw error;
   }
-
-  // Write auth-profiles.json (credentials read from file, not env vars)
-  const { providerIds, modelOverrides } = writeAuthProfiles(orgId, member.user_id);
-  if (providerIds.length === 0)
-    throw new Error("No API keys configured — add at least one provider key");
-
-  // Read channel tokens (e.g. Telegram bot token)
-  const channelTokens = getMemberChannelTokens(memberId);
-
-  // Update config (keep existing token; skills installed as directories)
-  const skills = getMemberSkills(orgId, member.user_id);
-  const gatewayDir = getGatewayDir(orgId, member.user_id);
-  const configPath = path.join(gatewayDir, "openclaw.json");
-  const configOptions = {
-    port: GATEWAY_INTERNAL_PORT,
-    token: member.gateway_token,
-    activeProviderIds: providerIds,
-    modelOverrides,
-    channelTokens,
-  };
-
-  // Merge into existing config to preserve user customizations;
-  // fall back to fresh generation if no existing config is found.
-  let config;
-  try {
-    const existing = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-    config = mergeOpenClawConfig(existing, configOptions);
-  } catch {
-    config = generateOpenClawConfig(configOptions);
-  }
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-
-  // Install skill directories
-  await installSkillsForUser(path.join(orgId, member.user_id), skills);
-
-  // Create new container (credentials via auth-profiles.json, no env vars needed)
-  const container = await docker.createContainer(
-    createContainerConfig(
-      containerName,
-      member.gateway_subdomain,
-      orgId,
-      member.user_id,
-    ),
-  );
-
-  await container.start();
-
-  // In local dev, read the actual host port Docker allocated
-  const actualPort = (await getHostPort(containerName)) || member.gateway_port;
-  if (actualPort !== member.gateway_port) {
-    db.prepare("UPDATE org_members SET gateway_port = ? WHERE id = ?").run(
-      actualPort,
-      memberId,
-    );
-  }
-
-  db.prepare("UPDATE org_members SET gateway_status = ? WHERE id = ?").run(
-    "deploying",
-    memberId,
-  );
-
-  return {
-    memberId,
-    userId: member.user_id,
-    gateway_port: actualPort,
-    gateway_status: "deploying" as const,
-  };
 }
 
 export async function getGatewayStatus(orgId: string, memberId: string) {
   const db = getDb();
   const member = getMember(orgId, memberId);
-  if (!member.gateway_port) {
+  if (!member.gateway_url) {
     return {
       memberId,
       userId: member.user_id,
-      gateway_port: null,
+      gateway_url: null,
       gateway_status: null,
-      gateway_subdomain: null,
+      gateway_service_name: null,
     };
   }
 
-  // Sync DB with actual container + health state
-  const containerName = getContainerName(orgId, member.user_id);
-  try {
-    const container = docker.getContainer(containerName);
-    const info = await container.inspect();
+  const request = {
+    name: SERVICE_PARENT + "/services/" + member.gateway_service_name
+  }
 
-    if (!info.State.Running) {
-      if (member.gateway_status !== "stopped") {
-        db.prepare(
+  try {
+    const response = await runClient.getService(request);
+
+    if (response.template.scaling.maxInstanceCount === 0 && member.gateway_status !== "stopped") {
+      db.prepare(
           "UPDATE org_members SET gateway_status = ? WHERE id = ?",
-        ).run("stopped", memberId);
-      }
+      ).run("stopped", memberId);
+
       return {
         memberId,
         userId: member.user_id,
-        gateway_port: member.gateway_port,
-        gateway_status: "stopped" as const,
-        gateway_subdomain: member.gateway_subdomain,
-      };
+        gateway_url: member.gateway_url,
+        gateway_status: "stopped",
+        gateway_service_name: member.gateway_service_name,
+      }
     }
 
     // Container is running — check if gateway HTTP is actually ready
-    const healthy = await checkGatewayHealth(containerName);
+    const healthy = await checkGatewayHealth(member.gateway_url);
     const actualStatus = healthy ? "running" : "deploying";
 
     if (actualStatus !== member.gateway_status) {
@@ -629,9 +501,9 @@ export async function getGatewayStatus(orgId: string, memberId: string) {
     return {
       memberId,
       userId: member.user_id,
-      gateway_port: member.gateway_port,
+      gateway_url: member.gateway_url,
       gateway_status: actualStatus,
-      gateway_subdomain: member.gateway_subdomain,
+      gateway_service_name: member.gateway_service_name,
     };
   } catch {
     // Container doesn't exist — mark as stopped
@@ -644,67 +516,35 @@ export async function getGatewayStatus(orgId: string, memberId: string) {
     return {
       memberId,
       userId: member.user_id,
-      gateway_port: member.gateway_port,
+      gateway_url: member.gateway_url,
       gateway_status: "stopped" as const,
-      gateway_subdomain: member.gateway_subdomain,
+      gateway_service_name: member.gateway_service_name,
     };
   }
 }
 
-/** Run a command inside a member's gateway container and return stdout. */
-async function execInContainer(
-  containerName: string,
-  cmd: string[],
-): Promise<string> {
-  const container = docker.getContainer(containerName);
-  const exec = await container.exec({
-    Cmd: cmd,
-    AttachStdout: true,
-    AttachStderr: true,
-  });
-  const stream = await exec.start({});
-  return new Promise<string>((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    stream.on("data", (chunk: Buffer) => chunks.push(chunk));
-    stream.on("end", async () => {
-      try {
-        const info = await exec.inspect();
-        const output = Buffer.concat(chunks).toString("utf-8");
-        if (info.ExitCode !== 0) {
-          reject(new Error(output.trim() || `Exit code ${info.ExitCode}`));
-        } else {
-          resolve(output);
-        }
-      } catch (err) {
-        reject(err);
-      }
-    });
-    stream.on("error", reject);
-    setTimeout(() => reject(new Error("exec timeout")), 10000);
-  });
-}
-
 /** Approve a pairing code for a channel in the member's gateway container. */
-export async function approvePairing(
-  orgId: string,
-  memberId: string,
-  channel: string,
-  code: string,
-): Promise<string> {
-  const member = getMember(orgId, memberId);
-  if (member.gateway_status !== "running") {
-    throw new Error("Gateway is not running");
-  }
-  const containerName = getContainerName(orgId, member.user_id);
-  const output = await execInContainer(containerName, [
-    "openclaw",
-    "pairing",
-    "approve",
-    channel,
-    code,
-  ]);
-  return output.trim();
-}
+// todo channel approval
+// export async function approvePairing(
+//   orgId: string,
+//   memberId: string,
+//   channel: string,
+//   code: string,
+// ): Promise<string> {
+//   const member = getMember(orgId, memberId);
+//   if (member.gateway_status !== "running") {
+//     throw new Error("Gateway is not running");
+//   }
+//   const containerName = getContainerName(orgId, member.user_id);
+//   const output = await execInContainer(containerName, [
+//     "openclaw",
+//     "pairing",
+//     "approve",
+//     channel,
+//     code,
+//   ]);
+//   return output.trim();
+// }
 
 /**
  * Remove all gateway containers and workspace files for an org.
@@ -719,67 +559,64 @@ export async function deleteOrgGateways(orgId: string): Promise<void> {
     .all(orgId) as any[];
 
   for (const member of members) {
-    const containerName = getContainerName(orgId, member.user_id);
     try {
-      const container = docker.getContainer(containerName);
-      await container.stop().catch(() => {});
-      await container.remove().catch(() => {});
-    } catch {
+      await redeployGateway(orgId, member.id);
+    } catch(error) {
+      console.warn("Trying to delete org gateway of org " + orgId + " and get :" + error);
       // Container may already be gone
     }
 
-    const gatewayDir = getGatewayDir(orgId, member.user_id);
-    if (fs.existsSync(gatewayDir)) {
-      fs.rmSync(gatewayDir, { recursive: true });
-    }
+    // todo: Delete gateway dir
   }
 
-  // Remove the whole org gateway directory if it exists
-  const orgGatewayDir = path.join(getDataDir(), "gateways", orgId);
-  if (fs.existsSync(orgGatewayDir)) {
-    fs.rmSync(orgGatewayDir, { recursive: true });
-  }
+  // todo: Remove the whole org gateway directory if it exists
 }
 
 /** Get Docker container IDs for all gateway containers in an org. */
-export async function getOrgContainerIds(orgId: string): Promise<Map<string, string>> {
+export async function getOrgServices(orgId: string): Promise<Map<string, string>> {
   const result = new Map<string, string>(); // userId -> containerId
+
   try {
-    const containers = await docker.listContainers({
-      all: true,
-      filters: { name: [`${CONTAINER_PREFIX}${orgId.slice(0, 8)}-`] },
-    });
-    for (const c of containers) {
-      // Container name format: /clawhuddle-gw-{orgId8}-{userId8}
-      const name = c.Names[0]?.replace(/^\//, '') || '';
-      const suffix = name.replace(`${CONTAINER_PREFIX}${orgId.slice(0, 8)}-`, '');
-      if (suffix && suffix !== name) {
-        // Map the 8-char userId prefix back — caller matches against full userId
-        result.set(suffix, c.Id);
+    const pattern = `${orgId}-`
+
+    const request = {
+      parent: SERVICE_PARENT
+    };
+
+    const iterable = runClient.listServicesAsync(request);
+    const serviceNameRegex = new RegExp(`claw-${orgId}-(?<memberId>[a-f0-9A-Z]+)-[a-f0-9]+$`);
+
+    for await (const response of iterable) {
+      if (!response.name)
+        continue;
+      const match = response.name.match(serviceNameRegex);
+      if (match) {
+        result.set(match.groups.memberId, response.name);
       }
     }
-  } catch {
-    // Docker may be unavailable
+  } catch (e) {
+    console.error(`getting services of org ${orgId}: ${e}`);
   }
+
   return result;
 }
 
 /** List pending pairing requests for a channel. */
-export async function listPairingRequests(
-  orgId: string,
-  memberId: string,
-  channel: string,
-): Promise<string> {
-  const member = getMember(orgId, memberId);
-  if (member.gateway_status !== "running") {
-    throw new Error("Gateway is not running");
-  }
-  const containerName = getContainerName(orgId, member.user_id);
-  const output = await execInContainer(containerName, [
-    "openclaw",
-    "pairing",
-    "list",
-    channel,
-  ]);
-  return output.trim();
-}
+// export async function listPairingRequests(
+//   orgId: string,
+//   memberId: string,
+//   channel: string,
+// ): Promise<string> {
+//   const member = getMember(orgId, memberId);
+//   if (member.gateway_status !== "running") {
+//     throw new Error("Gateway is not running");
+//   }
+//   const containerName = getContainerName(orgId, member.user_id);
+//   const output = await execInContainer(containerName, [
+//     "openclaw",
+//     "pairing",
+//     "list",
+//     channel,
+//   ]);
+//   return output.trim();
+// }

@@ -4,7 +4,7 @@ import { v4 as uuid } from 'uuid';
 import crypto from 'node:crypto';
 import { requireRole } from '../../middleware/auth.js';
 import { sendInvitationEmail } from '../../services/email.js';
-import { getOrgContainerIds } from '../../services/gateway.js';
+import { getOrgServices } from '../../services/gateway.js';
 import type { InviteMemberRequest, UpdateMemberRequest } from '@clawhuddle/shared';
 import { DEFAULT_MAX_MEMBERS } from '@clawhuddle/shared';
 
@@ -21,7 +21,7 @@ export async function orgMemberRoutes(app: FastifyInstance) {
     ).all(request.orgId!) as any[];
 
     // Enrich with Docker container IDs
-    const containerIds = await getOrgContainerIds(request.orgId!);
+    const containerIds = await getOrgServices(request.orgId!);
     for (const m of members) {
       const userPrefix = m.user_id?.slice(0, 8);
       m.container_id = userPrefix ? (containerIds.get(userPrefix) || null) : null;

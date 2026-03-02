@@ -185,13 +185,8 @@ export function MemberTable({ initialMembers }: Props) {
 
   const openGateway = (member: OrgMember) => {
     if (!member.gateway_token) return;
-    const { protocol, hostname } = window.location;
-    if (hostname === 'localhost' && member.gateway_port) {
-      window.open(`http://localhost:${member.gateway_port}/?token=${member.gateway_token}`, '_blank');
-    } else if (member.gateway_subdomain) {
-      const gwDomain = process.env.NEXT_PUBLIC_GATEWAY_DOMAIN || hostname;
-      window.open(`${protocol}//${member.gateway_subdomain}.${gwDomain}/?token=${member.gateway_token}`, '_blank');
-    }
+    // todo attach token
+    window.open(`${member.gateway_url}`)
   };
 
   const gatewayStatusBadge = (member: OrgMember) => {
