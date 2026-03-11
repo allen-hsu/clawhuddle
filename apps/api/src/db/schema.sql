@@ -68,6 +68,8 @@ CREATE TABLE IF NOT EXISTS user_skills (
 );
 
 -- API keys (org-scoped, for LLM providers)
+-- is_company_default=1 => org default key
+-- is_company_default=0 => user-specific key (users assigned via api_key_assignments)
 CREATE TABLE IF NOT EXISTS api_keys (
     id TEXT PRIMARY KEY,
     provider TEXT NOT NULL,
@@ -75,7 +77,19 @@ CREATE TABLE IF NOT EXISTS api_keys (
     is_company_default INTEGER NOT NULL DEFAULT 0,
     org_id TEXT REFERENCES organizations(id),
     member_id TEXT REFERENCES org_members(id),
+    credential_type TEXT NOT NULL DEFAULT 'api_key',
+    default_model TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Assigns a user-specific api_key to a member (many-to-many)
+-- Constraint: one member can only have ONE key per provider (enforced at app level)
+CREATE TABLE IF NOT EXISTS api_key_assignments (
+    id TEXT PRIMARY KEY,
+    api_key_id TEXT NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE,
+    member_id TEXT NOT NULL REFERENCES org_members(id) ON DELETE CASCADE,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(member_id, api_key_id)
 );
 
 -- Access allowlist (empty = open registration)

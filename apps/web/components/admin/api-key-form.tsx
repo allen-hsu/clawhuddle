@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { useToast } from '@/components/ui/toast';
-import { PROVIDERS, type CredentialType, type ModelOption, type OrgMember } from '@clawhuddle/shared';
+import { PROVIDERS, type CredentialType, type OrgMember } from '@clawhuddle/shared';
 
 type FetchFn = <T>(path: string, options?: RequestInit) => Promise<T>;
 
@@ -16,8 +16,18 @@ export interface ApiKeyDisplay {
   default_model?: string | null;
 }
 
+export interface UserSpecificKeyEntry {
+  key: ApiKeyDisplay;
+  assignedMemberIds: string[];
+}
+
+export interface ApiKeyData {
+  defaults: ApiKeyDisplay[];
+  userSpecific: UserSpecificKeyEntry[];
+}
+
 interface Props {
-  initialKeys: ApiKeyDisplay[];
+  initialData: ApiKeyData;
   fetchFn: FetchFn;
   members?: OrgMember[];
 }
@@ -29,7 +39,6 @@ const CRED_TYPE_LABEL: Record<CredentialType, string> = {
 };
 
 function getAvailableTabs(provider: (typeof PROVIDERS)[number]): CredentialType[] {
-  // OAuth-only providers (no envVar) only show oauth tab
   if (provider.supportsOAuth && !provider.envVar) return ['oauth'];
   const tabs: CredentialType[] = ['api_key'];
   if (provider.supportsSetupToken) tabs.push('token');
@@ -37,45 +46,232 @@ function getAvailableTabs(provider: (typeof PROVIDERS)[number]): CredentialType[
   return tabs;
 }
 
-export function ApiKeyForm({ initialKeys, fetchFn, members = [] }: Props) {
+// ---- Sub-component: Single key card with input row ----
+function KeyCard({
+  keyEntry,
+  assignedMemberIds,
+  isDefault,
+  members,
+  onDelete,
+  onAssign,
+  onUnassign,
+  saving,
+}: {
+  keyEntry: ApiKeyDisplay;
+  assignedMemberIds?: string[];
+  isDefault: boolean;
+  members: OrgMember[];
+  onDelete: (id: string) => void;
+  onAssign?: (keyId: string, memberId: string) => void;
+  onUnassign?: (keyId: string, memberId: string) => void;
+  saving: boolean;
+}) {
+  const providerConfig = PROVIDERS.find(p => p.id === keyEntry.provider);
+  const [addMember, setAddMember] = useState('');
+
+  const assignedMembers = members.filter(m => assignedMemberIds?.includes(m.id));
+  const unassignedMembers = members.filter(m => !assignedMemberIds?.includes(m.id));
+
+  return (
+    <div
+      className="rounded-lg px-3 py-2 flex flex-col gap-1.5"
+      style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)' }}
+    >
+      {/* Key value display */}
+      <div className="flex items-center gap-2">
+        <span
+          className="text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0"
+          style={{
+            background: keyEntry.credential_type === 'api_key' ? 'var(--bg-tertiary)' : 'var(--accent-muted,rgba(99,102,241,0.15))',
+            color: keyEntry.credential_type === 'api_key' ? 'var(--text-tertiary)' : 'var(--accent)',
+          }}
+        >
+          {CRED_TYPE_LABEL[keyEntry.credential_type ?? 'api_key']}
+        </span>
+        <code
+          className="text-[11px] font-mono px-1.5 py-0.5 rounded flex-1"
+          style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}
+        >
+          {keyEntry.key_masked}
+        </code>
+        {keyEntry.default_model && (
+          <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>{keyEntry.default_model}</span>
+        )}
+        <button
+          onClick={() => onDelete(keyEntry.id)}
+          disabled={saving}
+          className="text-xs px-2 py-0.5 rounded transition-colors disabled:opacity-50 shrink-0"
+          style={{ color: 'var(--text-tertiary)' }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error,#ef4444)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; }}
+        >
+          Delete
+        </button>
+      </div>
+
+      {/* Assigned members (for user-specific keys) */}
+      {!isDefault && assignedMemberIds !== undefined && (
+        <div className="pl-2 flex flex-col gap-1">
+          {assignedMembers.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {assignedMembers.map(m => (
+                <span
+                  key={m.id}
+                  className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full"
+                  style={{ background: 'var(--accent-muted,rgba(99,102,241,0.15))', color: 'var(--accent)' }}
+                >
+                  {m.name || m.email}
+                  <button
+                    onClick={() => onUnassign?.(keyEntry.id, m.id)}
+                    disabled={saving}
+                    className="opacity-60 hover:opacity-100 transition-opacity"
+                    title="Remove assignment"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          {unassignedMembers.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <select
+                value={addMember}
+                onChange={e => setAddMember(e.target.value)}
+                className="text-[11px] px-2 py-0.5 rounded flex-1"
+                style={{
+                  background: 'var(--bg-tertiary)',
+                  color: 'var(--text-secondary)',
+                  border: '1px solid var(--border-subtle)',
+                }}
+              >
+                <option value="">+ Add member...</option>
+                {unassignedMembers.map(m => (
+                  <option key={m.id} value={m.id}>{m.name || m.email}</option>
+                ))}
+              </select>
+              <button
+                onClick={() => {
+                  if (addMember) {
+                    onAssign?.(keyEntry.id, addMember);
+                    setAddMember('');
+                  }
+                }}
+                disabled={saving || !addMember}
+                className="text-[11px] px-2 py-0.5 rounded disabled:opacity-40 transition-opacity"
+                style={{ background: 'var(--accent)', color: 'var(--text-inverse)' }}
+              >
+                Assign
+              </button>
+            </div>
+          )}
+          {assignedMemberIds.length === 0 && unassignedMembers.length === 0 && (
+            <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>No members available</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- Sub-component: Provider section (add key form) ----
+function ProviderSection({
+  providerId,
+  isDefault,
+  children,
+  onSave,
+  saving,
+}: {
+  providerId: string;
+  isDefault: boolean;
+  children?: React.ReactNode;
+  onSave: (provider: string, key: string, cred: CredentialType, isDefault: boolean) => void;
+  saving: boolean;
+}) {
+  const providerConfig = PROVIDERS.find(p => p.id === providerId)!;
+  const tabs = getAvailableTabs(providerConfig);
+  const [activeTab, setActiveTab] = useState<CredentialType>(tabs[0]);
+  const [input, setInput] = useState('');
+
+  const label = providerConfig?.label ?? providerId;
+
+  return (
+    <div className="flex flex-col gap-2">
+      {/* existing key cards */}
+      {children}
+
+      {/* add key row */}
+      <div className="flex flex-col gap-1.5">
+        {tabs.length > 1 && (
+          <div className="flex gap-1">
+            {tabs.map(tab => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className="px-2 py-0.5 text-[10px] font-medium rounded transition-all"
+                style={{
+                  background: activeTab === tab ? 'var(--accent)' : 'transparent',
+                  color: activeTab === tab ? 'var(--text-inverse)' : 'var(--text-tertiary)',
+                  border: activeTab === tab ? 'none' : '1px solid var(--border-subtle)',
+                }}
+              >
+                {CRED_TYPE_LABEL[tab]}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-2">
+          {activeTab === 'oauth' ? (
+            <textarea
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              placeholder='{"access_token": "...", "refresh_token": "...", "expires_at": "..."}'
+              rows={2}
+              className="flex-1 px-3 py-1.5 text-xs font-mono rounded-lg resize-none"
+            />
+          ) : (
+            <input
+              type="password"
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              placeholder={activeTab === 'token' ? 'Paste setup token...' : providerConfig?.placeholder ?? 'sk-...'}
+              className="flex-1 px-3 py-1.5 text-sm rounded-lg"
+            />
+          )}
+          <button
+            onClick={() => {
+              if (input.trim()) {
+                onSave(providerId, input.trim(), activeTab, isDefault);
+                setInput('');
+              }
+            }}
+            disabled={saving || !input.trim()}
+            className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all disabled:opacity-50 whitespace-nowrap self-end"
+            style={{ background: 'var(--accent)', color: 'var(--text-inverse)' }}
+          >
+            Add Key
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- Main component ----
+export function ApiKeyForm({ initialData, fetchFn, members = [] }: Props) {
   const { toast } = useToast();
-  const [keys, setKeys] = useState(initialKeys);
-  const [inputs, setInputs] = useState<Record<string, string>>({});
+  const [data, setData] = useState<ApiKeyData>(initialData);
   const [saving, setSaving] = useState(false);
-  const [credTabs, setCredTabs] = useState<Record<string, CredentialType>>({});
-  const [selectedModels, setSelectedModels] = useState<Record<string, string>>(() => {
-    // Initialize from existing keys
-    const init: Record<string, string> = {};
-    for (const k of initialKeys) {
-      if (k.default_model) init[k.provider] = k.default_model;
-    }
-    return init;
-  });
-  const [selectedMembers, setSelectedMembers] = useState<Record<string, string>>(() => {
-    const init: Record<string, string> = {};
-    for (const k of initialKeys) {
-      if ((k as any).member_id) init[k.provider] = (k as any).member_id;
-    }
-    return init;
-  });
 
   const refresh = async () => {
-    const res = await fetchFn<{ data: ApiKeyDisplay[] }>('/api-keys');
-    setKeys(res.data);
+    const res = await fetchFn<{ data: ApiKeyData }>('/api-keys');
+    setData(res.data);
   };
 
-  const saveKey = async (provider: string) => {
-    const key = inputs[provider]?.trim();
-    if (!key) return;
-    const providerConfig = PROVIDERS.find((p) => p.id === provider);
-    const tabs = providerConfig ? getAvailableTabs(providerConfig) : ['api_key' as const];
-    const credentialType: CredentialType = credTabs[provider] ?? tabs[0];
-
-    // Validate OAuth JSON before sending
+  const saveKey = async (provider: string, key: string, credentialType: CredentialType, isDefault: boolean) => {
     if (credentialType === 'oauth') {
       try {
         const parsed = JSON.parse(key);
-        // Codex auth.json nests tokens under "tokens"
         const tokens = parsed.tokens ?? parsed;
         if (!tokens.access_token || !tokens.refresh_token) {
           toast('Invalid auth.json — must contain access_token and refresh_token', 'error');
@@ -86,25 +282,14 @@ export function ApiKeyForm({ initialKeys, fetchFn, members = [] }: Props) {
         return;
       }
     }
-
     setSaving(true);
     try {
-      const providerCfg = PROVIDERS.find((p) => p.id === provider);
-      const defaultModel = providerCfg?.models ? (selectedModels[provider] || providerCfg.defaultModel) : undefined;
-      const payload: any = { provider, key, credentialType, defaultModel };
-
-      if (selectedMembers[provider]) {
-        payload.memberId = selectedMembers[provider];
-      }
-
       await fetchFn('/api-keys', {
         method: 'POST',
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ provider, key, credentialType, isDefault }),
       });
-      setInputs((prev) => ({ ...prev, [provider]: '' }));
       await refresh();
-      const label = providerConfig?.label ?? provider;
-      toast(`${label} ${CRED_TYPE_LABEL[credentialType]?.toLowerCase() ?? 'key'} saved`, 'success');
+      toast(`${PROVIDERS.find(p => p.id === provider)?.label ?? provider} key saved`, 'success');
     } catch (err: any) {
       toast(err.message, 'error');
     } finally {
@@ -112,12 +297,12 @@ export function ApiKeyForm({ initialKeys, fetchFn, members = [] }: Props) {
     }
   };
 
-  const deleteKey = async (keyId: string, providerLabel: string) => {
+  const deleteKey = async (keyId: string) => {
     setSaving(true);
     try {
       await fetchFn(`/api-keys/${keyId}`, { method: 'DELETE' });
       await refresh();
-      toast(`${providerLabel} key deleted`, 'success');
+      toast('Key deleted', 'success');
     } catch (err: any) {
       toast(err.message, 'error');
     } finally {
@@ -125,201 +310,157 @@ export function ApiKeyForm({ initialKeys, fetchFn, members = [] }: Props) {
     }
   };
 
-  const updateModel = async (keyId: string, provider: string, model: string) => {
-    setSelectedModels((prev) => ({ ...prev, [provider]: model }));
+  const assignMember = async (keyId: string, memberId: string) => {
+    setSaving(true);
     try {
-      await fetchFn(`/api-keys/${keyId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ defaultModel: model }),
+      await fetchFn(`/api-keys/${keyId}/assign`, {
+        method: 'POST',
+        body: JSON.stringify({ memberId }),
       });
       await refresh();
-      toast('Default model updated', 'success');
+      const m = members.find(m => m.id === memberId);
+      toast(`${m?.name || m?.email || 'Member'} assigned`, 'success');
     } catch (err: any) {
       toast(err.message, 'error');
+    } finally {
+      setSaving(false);
     }
   };
 
-  const currentKey = (provider: string) => keys.find((k) => k.provider === provider);
+  const unassignMember = async (keyId: string, memberId: string) => {
+    setSaving(true);
+    try {
+      await fetchFn(`/api-keys/${keyId}/assign/${memberId}`, { method: 'DELETE' });
+      await refresh();
+      toast('Assignment removed', 'success');
+    } catch (err: any) {
+      toast(err.message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Group default keys and user-specific keys by provider
+  const defaultByProvider: Record<string, ApiKeyDisplay[]> = {};
+  for (const k of data.defaults) {
+    if (!defaultByProvider[k.provider]) defaultByProvider[k.provider] = [];
+    defaultByProvider[k.provider].push(k);
+  }
+
+  const userSpecificByProvider: Record<string, UserSpecificKeyEntry[]> = {};
+  for (const entry of data.userSpecific) {
+    const p = entry.key.provider;
+    if (!userSpecificByProvider[p]) userSpecificByProvider[p] = [];
+    userSpecificByProvider[p].push(entry);
+  }
+
+  const allProviders = PROVIDERS;
+
+  const sectionStyle = {
+    background: 'var(--bg-primary)',
+    border: '1px solid var(--border-subtle)',
+    borderRadius: '0.75rem',
+    padding: '1.25rem',
+  };
+
+  const headerStyle = {
+    fontSize: '0.875rem',
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+    marginBottom: '0.75rem',
+  };
+
+  const subheaderStyle = {
+    fontSize: '0.7rem',
+    fontWeight: 600,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.05em',
+    color: 'var(--text-tertiary)',
+    marginBottom: '0.5rem',
+  };
 
   return (
-    <div className="space-y-6 max-w-lg">
-      {PROVIDERS.map((providerConfig) => {
-        const { id, label, placeholder, defaultModel, models, supportsSetupToken, setupTokenInstructions, supportsOAuth, oauthInstructions } = providerConfig;
-        const existing = currentKey(id);
-        const tabs = getAvailableTabs(providerConfig);
-        const activeTab = credTabs[id] ?? tabs[0];
-        const currentModel = selectedModels[id] || existing?.default_model || defaultModel;
-        return (
-          <div
-            key={id}
-            className="p-5 rounded-xl"
-            style={{
-              background: 'var(--bg-primary)',
-              border: '1px solid var(--border-subtle)',
-            }}
-          >
-            <div className="flex items-baseline justify-between mb-1">
-              <h3
-                className="text-sm font-semibold"
-                style={{ color: 'var(--text-primary)' }}
-              >
-                {label}
-              </h3>
-              {models ? (
-                <select
-                  value={currentModel}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (existing) {
-                      updateModel(existing.id, id, val);
-                    } else {
-                      setSelectedModels((prev) => ({ ...prev, [id]: val }));
-                    }
-                  }}
-                  className="text-[11px] font-mono px-2 py-0.5 rounded"
-                  style={{
-                    background: 'var(--bg-tertiary)',
-                    color: 'var(--text-secondary)',
-                    border: '1px solid var(--border-subtle)',
-                  }}
-                >
-                  {models.map((m) => (
-                    <option key={m.id} value={m.id}>{m.label}</option>
+    <div className="flex flex-col gap-8 max-w-2xl">
+
+      {/* ── Default Keys ── */}
+      <div style={sectionStyle}>
+        <h2 style={headerStyle}>Default Keys</h2>
+        <p className="text-xs mb-5" style={{ color: 'var(--text-tertiary)' }}>
+          One key per AI provider. Used by all members unless overridden by a user-specific key.
+        </p>
+        <div className="flex flex-col gap-5">
+          {allProviders.map(providerConfig => {
+            const { id, label, models, defaultModel } = providerConfig;
+            const existing = defaultByProvider[id] ?? [];
+            return (
+              <div key={id}>
+                <div className="flex items-center justify-between mb-2">
+                  <span style={{ ...subheaderStyle, textTransform: undefined, fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                    {label}
+                  </span>
+                  {defaultModel && (
+                    <span className="text-[10px] font-mono" style={{ color: 'var(--text-tertiary)' }}>
+                      {defaultModel}
+                    </span>
+                  )}
+                </div>
+                <ProviderSection providerId={id} isDefault={true} onSave={saveKey} saving={saving}>
+                  {existing.map(k => (
+                    <KeyCard
+                      key={k.id}
+                      keyEntry={k}
+                      isDefault={true}
+                      members={members}
+                      onDelete={deleteKey}
+                      saving={saving}
+                    />
                   ))}
-                </select>
-              ) : (
-                <span
-                  className="text-[11px] font-mono"
-                  style={{ color: 'var(--text-tertiary)' }}
-                >
-                  {defaultModel}
-                </span>
-              )}
-            </div>
-
-            {existing && (
-              <div className="flex items-center gap-2 mb-3">
-                <span
-                  className="text-[10px] font-medium px-1.5 py-0.5 rounded"
-                  style={{
-                    background: existing.credential_type === 'api_key' ? 'var(--bg-tertiary)' : 'var(--accent-muted, rgba(99,102,241,0.15))',
-                    color: existing.credential_type === 'api_key' ? 'var(--text-tertiary)' : 'var(--accent)',
-                  }}
-                >
-                  {CRED_TYPE_LABEL[existing.credential_type ?? 'api_key']}
-                </span>
-                <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                  <code
-                    className="px-1.5 py-0.5 rounded text-[11px] font-mono"
-                    style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}
-                  >
-                    {existing.key_masked}
-                  </code>
-                </p>
-                <button
-                  onClick={() => deleteKey(existing.id, label)}
-                  disabled={saving}
-                  className="text-xs px-2 py-0.5 rounded transition-colors disabled:opacity-50"
-                  style={{ color: 'var(--text-tertiary)' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error, #ef4444)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; }}
-                >
-                  Delete
-                </button>
+                </ProviderSection>
               </div>
-            )}
+            );
+          })}
+        </div>
+      </div>
 
-            {tabs.length > 1 && (
-              <div className="flex gap-1 mb-3">
-                {tabs.map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => setCredTabs((prev) => ({ ...prev, [id]: tab }))}
-                    className="px-3 py-1 text-xs font-medium rounded-md transition-all"
-                    style={{
-                      background: activeTab === tab ? 'var(--accent)' : 'transparent',
-                      color: activeTab === tab ? 'var(--text-inverse)' : 'var(--text-tertiary)',
-                      border: activeTab === tab ? 'none' : '1px solid var(--border-subtle)',
-                    }}
-                  >
-                    {CRED_TYPE_LABEL[tab]}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {activeTab === 'token' && setupTokenInstructions && (
-              <p className="text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>
-                {setupTokenInstructions}
-              </p>
-            )}
-
-            {activeTab === 'oauth' && oauthInstructions && (
-              <p className="text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>
-                {oauthInstructions}
-              </p>
-            )}
-
-            <div className="flex gap-2">
-              {activeTab === 'oauth' ? (
-                <textarea
-                  value={inputs[id] ?? ''}
-                  onChange={(e) => setInputs((prev) => ({ ...prev, [id]: e.target.value }))}
-                  placeholder='{"access_token": "...", "refresh_token": "...", "expires_at": "..."}'
-                  rows={3}
-                  className="flex-1 px-3 py-2 text-xs font-mono rounded-lg resize-none"
-                />
-              ) : (
-                <input
-                  type="password"
-                  value={inputs[id] ?? ''}
-                  onChange={(e) => setInputs((prev) => ({ ...prev, [id]: e.target.value }))}
-                  placeholder={
-                    activeTab === 'token' ? 'Paste setup token...' : placeholder
-                  }
-                  className="flex-1 px-3 py-2 text-sm rounded-lg"
-                />
-              )}
-              <button
-                onClick={() => saveKey(id)}
-                disabled={saving}
-                className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50 self-end"
-                style={{
-                  background: 'var(--accent)',
-                  color: 'var(--text-inverse)',
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--accent-hover)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--accent)'; }}
-              >
-                Save
-              </button>
-            </div>
-
-            {/* Member targeting */}
-            {members.length > 0 && (
-              <div className="mt-3 flex items-center gap-2">
-                <span className="text-[11px] font-medium" style={{ color: 'var(--text-tertiary)' }}>Scope to:</span>
-                <select
-                  value={selectedMembers[id] || ''}
-                  onChange={(e) => setSelectedMembers((prev) => ({ ...prev, [id]: e.target.value }))}
-                  className="text-[11px] px-2 py-0.5 rounded"
-                  style={{
-                    background: 'var(--bg-tertiary)',
-                    color: 'var(--text-secondary)',
-                    border: '1px solid var(--border-subtle)',
-                  }}
-                >
-                  <option value="">Org Default (All Members)</option>
-                  {members.map(m => (
-                    <option key={m.id} value={m.id}>{m.name || m.email}</option>
+      {/* ── User-Specific Keys ── */}
+      <div style={sectionStyle}>
+        <h2 style={headerStyle}>User-Specific Keys</h2>
+        <p className="text-xs mb-5" style={{ color: 'var(--text-tertiary)' }}>
+          Assign specific keys to individual members. For the same AI provider, a member can only have one key assigned.
+          Members not assigned here will use the Default key above.
+        </p>
+        <div className="flex flex-col gap-5">
+          {allProviders.map(providerConfig => {
+            const { id, label } = providerConfig;
+            const existing = userSpecificByProvider[id] ?? [];
+            return (
+              <div key={id}>
+                <div className="flex items-baseline justify-between mb-2">
+                  <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                    {label}
+                  </span>
+                  <span style={subheaderStyle}>{existing.length} key{existing.length !== 1 ? 's' : ''}</span>
+                </div>
+                <ProviderSection providerId={id} isDefault={false} onSave={saveKey} saving={saving}>
+                  {existing.map(entry => (
+                    <KeyCard
+                      key={entry.key.id}
+                      keyEntry={entry.key}
+                      assignedMemberIds={entry.assignedMemberIds}
+                      isDefault={false}
+                      members={members}
+                      onDelete={deleteKey}
+                      onAssign={assignMember}
+                      onUnassign={unassignMember}
+                      saving={saving}
+                    />
                   ))}
-                </select>
+                </ProviderSection>
               </div>
-            )}
-
-          </div>
-        );
-      })}
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
