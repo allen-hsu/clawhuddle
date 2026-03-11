@@ -170,4 +170,6 @@ export interface SetApiKeyRequest {
   credentialType?: CredentialType;
   /** User-selected default model for this provider */
   defaultModel?: string;
+  /** Optional member ID to scope this API key to a single user */
+  memberId?: string;
 }

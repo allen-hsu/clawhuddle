@@ -1,8 +1,9 @@
 'use client';
 
+import * as React from 'react';
 import { useState } from 'react';
 import { useToast } from '@/components/ui/toast';
-import { PROVIDERS, type CredentialType, type ModelOption } from '@clawhuddle/shared';
+import { PROVIDERS, type CredentialType, type ModelOption, type OrgMember } from '@clawhuddle/shared';
 
 type FetchFn = <T>(path: string, options?: RequestInit) => Promise<T>;
 
@@ -18,6 +19,7 @@ export interface ApiKeyDisplay {
 interface Props {
   initialKeys: ApiKeyDisplay[];
   fetchFn: FetchFn;
+  members?: OrgMember[];
 }
 
 const CRED_TYPE_LABEL: Record<CredentialType, string> = {
@@ -35,7 +37,7 @@ function getAvailableTabs(provider: (typeof PROVIDERS)[number]): CredentialType[
   return tabs;
 }
 
-export function ApiKeyForm({ initialKeys, fetchFn }: Props) {
+export function ApiKeyForm({ initialKeys, fetchFn, members = [] }: Props) {
   const { toast } = useToast();
   const [keys, setKeys] = useState(initialKeys);
   const [inputs, setInputs] = useState<Record<string, string>>({});
@@ -46,6 +48,13 @@ export function ApiKeyForm({ initialKeys, fetchFn }: Props) {
     const init: Record<string, string> = {};
     for (const k of initialKeys) {
       if (k.default_model) init[k.provider] = k.default_model;
+    }
+    return init;
+  });
+  const [selectedMembers, setSelectedMembers] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    for (const k of initialKeys) {
+      if ((k as any).member_id) init[k.provider] = (k as any).member_id;
     }
     return init;
   });
@@ -82,9 +91,15 @@ export function ApiKeyForm({ initialKeys, fetchFn }: Props) {
     try {
       const providerCfg = PROVIDERS.find((p) => p.id === provider);
       const defaultModel = providerCfg?.models ? (selectedModels[provider] || providerCfg.defaultModel) : undefined;
+      const payload: any = { provider, key, credentialType, defaultModel };
+
+      if (selectedMembers[provider]) {
+        payload.memberId = selectedMembers[provider];
+      }
+
       await fetchFn('/api-keys', {
         method: 'POST',
-        body: JSON.stringify({ provider, key, credentialType, defaultModel }),
+        body: JSON.stringify(payload),
       });
       setInputs((prev) => ({ ...prev, [provider]: '' }));
       await refresh();
@@ -279,6 +294,29 @@ export function ApiKeyForm({ initialKeys, fetchFn }: Props) {
                 Save
               </button>
             </div>
+
+            {/* Member targeting */}
+            {members.length > 0 && (
+              <div className="mt-3 flex items-center gap-2">
+                <span className="text-[11px] font-medium" style={{ color: 'var(--text-tertiary)' }}>Scope to:</span>
+                <select
+                  value={selectedMembers[id] || ''}
+                  onChange={(e) => setSelectedMembers((prev) => ({ ...prev, [id]: e.target.value }))}
+                  className="text-[11px] px-2 py-0.5 rounded"
+                  style={{
+                    background: 'var(--bg-tertiary)',
+                    color: 'var(--text-secondary)',
+                    border: '1px solid var(--border-subtle)',
+                  }}
+                >
+                  <option value="">Org Default (All Members)</option>
+                  {members.map(m => (
+                    <option key={m.id} value={m.id}>{m.name || m.email}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
           </div>
         );
       })}

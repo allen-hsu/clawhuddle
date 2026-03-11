@@ -171,8 +171,8 @@ function createTraefikLabels(
  * from the file (hot-reloaded) instead of env vars.
  * Returns the list of provider IDs that have credentials configured.
  */
-function writeAuthProfiles(orgId: string, userId: string): { providerIds: string[]; modelOverrides: Record<string, string> } {
-  const allKeys = getOrgAllApiKeys(orgId);
+function writeAuthProfiles(orgId: string, userId: string, memberId: string): { providerIds: string[]; modelOverrides: Record<string, string> } {
+  const allKeys = getOrgAllApiKeys(orgId, memberId);
   const profiles: Record<string, Record<string, unknown>> = {};
   const providerIds: string[] = [];
   const modelOverrides: Record<string, string> = {};
@@ -247,15 +247,15 @@ export function syncAuthProfiles(orgId: string): void {
   const db = getDb();
   const runningMembers = db
     .prepare(
-      `SELECT om.user_id FROM org_members om
+      `SELECT om.id, om.user_id FROM org_members om
      WHERE om.org_id = ? AND om.gateway_status IN ('running', 'deploying')`,
     )
-    .all(orgId) as { user_id: string }[];
+    .all(orgId) as { id: string; user_id: string }[];
 
-  for (const { user_id } of runningMembers) {
+  for (const { id, user_id } of runningMembers) {
     const gatewayDir = getGatewayDir(orgId, user_id);
     if (fs.existsSync(gatewayDir)) {
-      writeAuthProfiles(orgId, user_id);
+      writeAuthProfiles(orgId, user_id, id);
     }
   }
 }
@@ -332,7 +332,7 @@ export async function provisionGateway(orgId: string, memberId: string) {
   fs.mkdirSync(gatewayDir, { recursive: true });
 
   // Write auth-profiles.json (credentials read from file, not env vars)
-  const { providerIds, modelOverrides } = writeAuthProfiles(orgId, member.user_id);
+  const { providerIds, modelOverrides } = writeAuthProfiles(orgId, member.user_id, memberId);
   if (providerIds.length === 0)
     throw new Error("No API keys configured — add at least one provider key");
 
@@ -342,13 +342,14 @@ export async function provisionGateway(orgId: string, memberId: string) {
   // Read channel tokens (e.g. Telegram bot token)
   const channelTokens = getMemberChannelTokens(memberId);
 
-  // Generate config
+  // Generate config — allowedOrigins restricts Control UI to this container's subdomain only
   const config = generateOpenClawConfig({
     port,
     token,
     activeProviderIds: providerIds,
     modelOverrides,
     channelTokens,
+    allowedOrigins: [`https://${subdomain}.${GATEWAY_DOMAIN}`],
   });
   fs.writeFileSync(
     path.join(gatewayDir, "openclaw.json"),
@@ -370,7 +371,7 @@ export async function provisionGateway(orgId: string, memberId: string) {
     // Remove existing container if any
     try {
       const existing = docker.getContainer(containerName);
-      await existing.stop().catch(() => {});
+      await existing.stop().catch(() => { });
       await existing.remove();
     } catch {
       // Container doesn't exist, that's fine
@@ -465,7 +466,7 @@ export async function removeGateway(orgId: string, memberId: string) {
   const containerName = getContainerName(orgId, member.user_id);
   try {
     const container = docker.getContainer(containerName);
-    await container.stop().catch(() => {});
+    await container.stop().catch(() => { });
     await container.remove();
   } catch {
     // Container may already be removed
@@ -507,14 +508,14 @@ export async function redeployGateway(orgId: string, memberId: string) {
   // Stop and remove old container
   try {
     const existing = docker.getContainer(containerName);
-    await existing.stop().catch(() => {});
+    await existing.stop().catch(() => { });
     await existing.remove();
   } catch {
     // Container may not exist
   }
 
   // Write auth-profiles.json (credentials read from file, not env vars)
-  const { providerIds, modelOverrides } = writeAuthProfiles(orgId, member.user_id);
+  const { providerIds, modelOverrides } = writeAuthProfiles(orgId, member.user_id, memberId);
   if (providerIds.length === 0)
     throw new Error("No API keys configured — add at least one provider key");
 
@@ -531,6 +532,7 @@ export async function redeployGateway(orgId: string, memberId: string) {
     activeProviderIds: providerIds,
     modelOverrides,
     channelTokens,
+    allowedOrigins: [`https://${member.gateway_subdomain}.${GATEWAY_DOMAIN}`],
   };
 
   // Merge into existing config to preserve user customizations;
@@ -722,8 +724,8 @@ export async function deleteOrgGateways(orgId: string): Promise<void> {
     const containerName = getContainerName(orgId, member.user_id);
     try {
       const container = docker.getContainer(containerName);
-      await container.stop().catch(() => {});
-      await container.remove().catch(() => {});
+      await container.stop().catch(() => { });
+      await container.remove().catch(() => { });
     } catch {
       // Container may already be gone
     }

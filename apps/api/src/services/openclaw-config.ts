@@ -73,6 +73,8 @@ export function generateOpenClawConfig(options: {
   /** Per-provider model overrides from DB (provider id -> model id) */
   modelOverrides?: Record<string, string>;
   channelTokens?: ChannelTokens;
+  /** Exact origin URLs to whitelist (e.g. https://claw-xxx.gw.example.com) */
+  allowedOrigins?: string[];
 }): OpenClawConfig {
   const { port, token } = options;
   const channels = options.enabledChannels ?? CHANNEL_PLUGINS;
@@ -99,9 +101,12 @@ export function generateOpenClawConfig(options: {
       controlUi: {
         enabled: true,
         allowInsecureAuth: true,
-        allowedOrigins: ["*"],
-        dangerouslyAllowHostHeaderOriginFallback: true,
+        // Disable device pairing prompt — security is enforced by token auth + exact allowedOrigins
         dangerouslyDisableDeviceAuth: true,
+        // Use the exact subdomain URL if provided, otherwise fall back to host-header mode
+        ...(options.allowedOrigins && options.allowedOrigins.length > 0
+          ? { allowedOrigins: options.allowedOrigins }
+          : { dangerouslyAllowHostHeaderOriginFallback: true }),
       },
       auth: {
         mode: 'token',
@@ -109,28 +114,28 @@ export function generateOpenClawConfig(options: {
 
       },
       trustedProxies: [
-          // Local / private ranges
-          '127.0.0.0/8',
-          '10.0.0.0/8',
-          '172.0.0.0/8',
-          '192.168.0.0/16',
-          // Cloudflare IPv4 — https://www.cloudflare.com/ips-v4/
-          '173.245.48.0/20',
-          '103.21.244.0/22',
-          '103.22.200.0/22',
-          '103.31.4.0/22',
-          '141.101.64.0/18',
-          '108.162.192.0/18',
-          '190.93.240.0/20',
-          '188.114.96.0/20',
-          '197.234.240.0/22',
-          '198.41.128.0/17',
-          '162.158.0.0/15',
-          '172.64.0.0/13',
-          '131.0.72.0/22',
-          '104.16.0.0/13',
-          '104.24.0.0/14',
-        ],
+        // Local / private ranges
+        '127.0.0.0/8',
+        '10.0.0.0/8',
+        '172.0.0.0/8',
+        '192.168.0.0/16',
+        // Cloudflare IPv4 — https://www.cloudflare.com/ips-v4/
+        '173.245.48.0/20',
+        '103.21.244.0/22',
+        '103.22.200.0/22',
+        '103.31.4.0/22',
+        '141.101.64.0/18',
+        '108.162.192.0/18',
+        '190.93.240.0/20',
+        '188.114.96.0/20',
+        '197.234.240.0/22',
+        '198.41.128.0/17',
+        '162.158.0.0/15',
+        '172.64.0.0/13',
+        '131.0.72.0/22',
+        '104.16.0.0/13',
+        '104.24.0.0/14',
+      ],
     },
     plugins: {
       entries: pluginEntries,

@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
     key_value TEXT NOT NULL,
     is_company_default INTEGER NOT NULL DEFAULT 0,
     org_id TEXT REFERENCES organizations(id),
+    member_id TEXT REFERENCES org_members(id),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

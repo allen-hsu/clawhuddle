@@ -38,6 +38,7 @@ export async function orgApiKeyRoutes(app: FastifyInstance) {
           key_value: undefined,
           credential_type: k.credential_type || 'api_key',
           default_model: k.default_model || null,
+          member_id: k.member_id || null,
         })),
       };
     }
@@ -48,7 +49,7 @@ export async function orgApiKeyRoutes(app: FastifyInstance) {
     '/api/orgs/:orgId/api-keys',
     { preHandler: requireRole('owner', 'admin') },
     async (request, reply) => {
-      const { provider, key, credentialType, defaultModel } = request.body;
+      const { provider, key, credentialType, defaultModel, memberId } = request.body;
       if (!provider || !key) {
         return reply.status(400).send({ error: 'validation', message: 'provider and key are required' });
       }
@@ -58,18 +59,28 @@ export async function orgApiKeyRoutes(app: FastifyInstance) {
       const ct: CredentialType = credentialType === 'token' ? 'token' : credentialType === 'oauth' ? 'oauth' : 'api_key';
 
       const db = getDb();
-      // Remove old default for this provider in this org
-      db.prepare('DELETE FROM api_keys WHERE provider = ? AND is_company_default = 1 AND org_id = ?').run(provider, request.orgId!);
 
       const id = uuid();
-      db.prepare(
-        'INSERT INTO api_keys (id, provider, key_value, is_company_default, org_id, credential_type, default_model) VALUES (?, ?, ?, 1, ?, ?, ?)'
-      ).run(id, provider, encodeKey(key), request.orgId!, ct, defaultModel || null);
+      if (memberId) {
+        // Remove old member-specific key for this provider
+        db.prepare('DELETE FROM api_keys WHERE provider = ? AND member_id = ? AND org_id = ?').run(provider, memberId, request.orgId!);
+
+        db.prepare(
+          'INSERT INTO api_keys (id, provider, key_value, is_company_default, org_id, member_id, credential_type, default_model) VALUES (?, ?, ?, 0, ?, ?, ?, ?)'
+        ).run(id, provider, encodeKey(key), request.orgId!, memberId, ct, defaultModel || null);
+      } else {
+        // Remove old default for this provider in this org
+        db.prepare('DELETE FROM api_keys WHERE provider = ? AND is_company_default = 1 AND org_id = ?').run(provider, request.orgId!);
+
+        db.prepare(
+          'INSERT INTO api_keys (id, provider, key_value, is_company_default, org_id, credential_type, default_model) VALUES (?, ?, ?, 1, ?, ?, ?)'
+        ).run(id, provider, encodeKey(key), request.orgId!, ct, defaultModel || null);
+      }
 
       syncAuthProfiles(request.orgId!);
 
       return reply.status(201).send({
-        data: { id, provider, key_masked: maskKey(key), is_company_default: true, credential_type: ct, default_model: defaultModel || null },
+        data: { id, provider, key_masked: maskKey(key), is_company_default: !memberId, member_id: memberId || null, credential_type: ct, default_model: defaultModel || null },
       });
     }
   );
@@ -117,11 +128,28 @@ export function getOrgApiKey(orgId: string, provider: string): string | null {
 }
 
 // Returns all org API keys (decrypted) for auth-profiles.json generation
-export function getOrgAllApiKeys(orgId: string): { provider: string; key: string; credential_type: CredentialType; default_model: string | null }[] {
+// If memberId is provided, it fetches keys specific to the member, replacing company defaults if overlapping
+export function getOrgAllApiKeys(orgId: string, memberId?: string): { provider: string; key: string; credential_type: CredentialType; default_model: string | null }[] {
   const db = getDb();
-  const rows = db.prepare(
-    'SELECT provider, key_value, credential_type, default_model FROM api_keys WHERE is_company_default = 1 AND org_id = ?'
-  ).all(orgId) as { provider: string; key_value: string; credential_type: string; default_model: string | null }[];
+  let rows: any[];
+
+  if (memberId) {
+    rows = db.prepare(`
+      SELECT provider, key_value, credential_type, default_model 
+      FROM api_keys
+      WHERE org_id = ? AND (
+          member_id = ? OR 
+          (is_company_default = 1 AND NOT EXISTS (
+              SELECT 1 FROM api_keys a2 WHERE a2.provider = api_keys.provider AND a2.member_id = ? AND a2.org_id = ?
+          ))
+      )
+    `).all(orgId, memberId, memberId, orgId) as { provider: string; key_value: string; credential_type: string; default_model: string | null }[];
+  } else {
+    rows = db.prepare(
+      'SELECT provider, key_value, credential_type, default_model FROM api_keys WHERE is_company_default = 1 AND org_id = ?'
+    ).all(orgId) as { provider: string; key_value: string; credential_type: string; default_model: string | null }[];
+  }
+
   return rows.map((r) => ({
     provider: r.provider,
     key: decodeKey(r.key_value),
