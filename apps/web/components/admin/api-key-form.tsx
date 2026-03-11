@@ -110,28 +110,23 @@ function KeyCard({
 
       {/* Model selector (only when provider has a models list) */}
       {providerConfig?.models && providerConfig.models.length > 0 && onModelChange && (
-        <div className="flex flex-col gap-1 pl-1">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>Model:</span>
-            <select
-              value={keyEntry.default_model ?? providerConfig.defaultModel}
-              onChange={(e) => onModelChange(keyEntry.id, e.target.value)}
-              disabled={saving}
-              className="text-[11px] px-2 py-0.5 rounded flex-1 disabled:opacity-50"
-              style={{
-                background: 'var(--bg-tertiary)',
-                color: 'var(--text-secondary)',
-                border: '1px solid var(--border-subtle)',
-              }}
-            >
-              {providerConfig.models.map(m => (
-                <option key={m.id} value={m.id}>{m.label}</option>
-              ))}
-            </select>
-          </div>
-          <span className="text-[10px]" style={{ color: 'var(--text-tertiary)', opacity: 0.7 }}>
-            ⚠️ 切換模型後需重新啟動 claw 方能生效
-          </span>
+        <div className="flex items-center gap-2 pl-1">
+          <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>Model:</span>
+          <select
+            value={keyEntry.default_model ?? providerConfig.defaultModel}
+            onChange={(e) => onModelChange(keyEntry.id, e.target.value)}
+            disabled={saving}
+            className="text-[11px] px-2 py-0.5 rounded flex-1 disabled:opacity-50"
+            style={{
+              background: 'var(--bg-tertiary)',
+              color: 'var(--text-secondary)',
+              border: '1px solid var(--border-subtle)',
+            }}
+          >
+            {providerConfig.models.map(m => (
+              <option key={m.id} value={m.id}>{m.label}</option>
+            ))}
+          </select>
         </div>
       )}
 
