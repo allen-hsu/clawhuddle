@@ -156,8 +156,26 @@ export const PROVIDERS: ProviderConfig[] = [
     ],
     supportsSetupToken: true, setupTokenInstructions: 'Run `claude setup-token` in your terminal and paste the result here.',
   },
-  { id: 'openai', label: 'OpenAI', envVar: 'OPENAI_API_KEY', placeholder: 'sk-...', defaultModel: 'openai/gpt-4.1' },
-  { id: 'openai-codex', label: 'OpenAI Codex', envVar: '', placeholder: '', defaultModel: 'openai-codex/gpt-5.3-codex', supportsOAuth: true, oauthInstructions: 'Run `codex` and sign in with your ChatGPT account, then run `cat ~/.codex/auth.json` and paste the JSON here.' },
+  {
+    id: 'openai', label: 'OpenAI', envVar: 'OPENAI_API_KEY', placeholder: 'sk-...',
+    defaultModel: 'openai/gpt-5.4',
+    models: [
+      { id: 'openai/gpt-5.4', label: 'GPT-5.4' },
+      { id: 'openai/gpt-5.4-pro', label: 'GPT-5.4 Pro' },
+      { id: 'openai/gpt-5.2', label: 'GPT-5.2' },
+      { id: 'openai/gpt-5.2-pro', label: 'GPT-5.2 Pro' },
+    ],
+  },
+  {
+    id: 'openai-codex', label: 'OpenAI Codex', envVar: '', placeholder: '',
+    defaultModel: 'openai-codex/gpt-5.4',
+    models: [
+      { id: 'openai-codex/gpt-5.4', label: 'GPT-5.4 (Codex)' },
+      { id: 'openai-codex/gpt-5.3-codex', label: 'GPT-5.3 Codex' },
+      { id: 'openai-codex/gpt-5.3-codex-spark', label: 'GPT-5.3 Codex Spark' },
+    ],
+    supportsOAuth: true, oauthInstructions: 'Run `codex` and sign in with your ChatGPT account, then run `cat ~/.codex/auth.json` and paste the JSON here.',
+  },
   { id: 'openrouter', label: 'OpenRouter', envVar: 'OPENROUTER_API_KEY', placeholder: 'sk-or-...', defaultModel: 'openrouter/anthropic/claude-sonnet-4.5' },
   { id: 'google', label: 'Google Gemini', envVar: 'GEMINI_API_KEY', placeholder: 'AIza...', defaultModel: 'google/gemini-2.5-pro' },
 ];

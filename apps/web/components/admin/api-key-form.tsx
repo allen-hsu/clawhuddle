@@ -55,6 +55,7 @@ function KeyCard({
   onDelete,
   onAssign,
   onUnassign,
+  onModelChange,
   saving,
 }: {
   keyEntry: ApiKeyDisplay;
@@ -64,6 +65,7 @@ function KeyCard({
   onDelete: (id: string) => void;
   onAssign?: (keyId: string, memberId: string) => void;
   onUnassign?: (keyId: string, memberId: string) => void;
+  onModelChange?: (keyId: string, model: string) => void;
   saving: boolean;
 }) {
   const providerConfig = PROVIDERS.find(p => p.id === keyEntry.provider);
@@ -94,9 +96,6 @@ function KeyCard({
         >
           {keyEntry.key_masked}
         </code>
-        {keyEntry.default_model && (
-          <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>{keyEntry.default_model}</span>
-        )}
         <button
           onClick={() => onDelete(keyEntry.id)}
           disabled={saving}
@@ -108,6 +107,33 @@ function KeyCard({
           Delete
         </button>
       </div>
+
+      {/* Model selector (only when provider has a models list) */}
+      {providerConfig?.models && providerConfig.models.length > 0 && onModelChange && (
+        <div className="flex items-center gap-2 pl-1">
+          <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>Model:</span>
+          <select
+            value={keyEntry.default_model ?? providerConfig.defaultModel}
+            onChange={(e) => onModelChange(keyEntry.id, e.target.value)}
+            disabled={saving}
+            className="text-[11px] px-2 py-0.5 rounded flex-1 disabled:opacity-50"
+            style={{
+              background: 'var(--bg-tertiary)',
+              color: 'var(--text-secondary)',
+              border: '1px solid var(--border-subtle)',
+            }}
+          >
+            {providerConfig.models.map(m => (
+              <option key={m.id} value={m.id}>{m.label}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* Show model label only (no selector) when no models list */}
+      {(!providerConfig?.models || providerConfig.models.length === 0) && keyEntry.default_model && (
+        <span className="text-[10px] pl-1" style={{ color: 'var(--text-tertiary)' }}>{keyEntry.default_model}</span>
+      )}
 
       {/* Assigned members (for user-specific keys) */}
       {!isDefault && assignedMemberIds !== undefined && (
@@ -185,13 +211,14 @@ function ProviderSection({
   providerId: string;
   isDefault: boolean;
   children?: React.ReactNode;
-  onSave: (provider: string, key: string, cred: CredentialType, isDefault: boolean) => void;
+  onSave: (provider: string, key: string, cred: CredentialType, isDefault: boolean, defaultModel?: string) => void;
   saving: boolean;
 }) {
   const providerConfig = PROVIDERS.find(p => p.id === providerId)!;
   const tabs = getAvailableTabs(providerConfig);
   const [activeTab, setActiveTab] = useState<CredentialType>(tabs[0]);
   const [input, setInput] = useState('');
+  const [selectedModel, setSelectedModel] = useState<string>(providerConfig?.defaultModel ?? '');
 
   const label = providerConfig?.label ?? providerId;
 
@@ -241,7 +268,7 @@ function ProviderSection({
           <button
             onClick={() => {
               if (input.trim()) {
-                onSave(providerId, input.trim(), activeTab, isDefault);
+                onSave(providerId, input.trim(), activeTab, isDefault, selectedModel || undefined);
                 setInput('');
               }
             }}
@@ -252,6 +279,27 @@ function ProviderSection({
             Add Key
           </button>
         </div>
+
+        {/* Model selector for new key */}
+        {providerConfig?.models && providerConfig.models.length > 0 && (
+          <div className="flex items-center gap-2">
+            <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>Default model:</span>
+            <select
+              value={selectedModel}
+              onChange={e => setSelectedModel(e.target.value)}
+              className="text-[11px] px-2 py-0.5 rounded"
+              style={{
+                background: 'var(--bg-tertiary)',
+                color: 'var(--text-secondary)',
+                border: '1px solid var(--border-subtle)',
+              }}
+            >
+              {providerConfig.models.map(m => (
+                <option key={m.id} value={m.id}>{m.label}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -268,7 +316,7 @@ export function ApiKeyForm({ initialData, fetchFn, members = [] }: Props) {
     setData(res.data);
   };
 
-  const saveKey = async (provider: string, key: string, credentialType: CredentialType, isDefault: boolean) => {
+  const saveKey = async (provider: string, key: string, credentialType: CredentialType, isDefault: boolean, defaultModel?: string) => {
     if (credentialType === 'oauth') {
       try {
         const parsed = JSON.parse(key);
@@ -286,7 +334,7 @@ export function ApiKeyForm({ initialData, fetchFn, members = [] }: Props) {
     try {
       await fetchFn('/api-keys', {
         method: 'POST',
-        body: JSON.stringify({ provider, key, credentialType, isDefault }),
+        body: JSON.stringify({ provider, key, credentialType, isDefault, defaultModel }),
       });
       await refresh();
       toast(`${PROVIDERS.find(p => p.id === provider)?.label ?? provider} key saved`, 'success');
@@ -303,6 +351,22 @@ export function ApiKeyForm({ initialData, fetchFn, members = [] }: Props) {
       await fetchFn(`/api-keys/${keyId}`, { method: 'DELETE' });
       await refresh();
       toast('Key deleted', 'success');
+    } catch (err: any) {
+      toast(err.message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateModel = async (keyId: string, defaultModel: string) => {
+    setSaving(true);
+    try {
+      await fetchFn(`/api-keys/${keyId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ defaultModel }),
+      });
+      await refresh();
+      toast('Default model updated', 'success');
     } catch (err: any) {
       toast(err.message, 'error');
     } finally {
@@ -398,7 +462,7 @@ export function ApiKeyForm({ initialData, fetchFn, members = [] }: Props) {
                   <span style={{ ...subheaderStyle, textTransform: undefined, fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
                     {label}
                   </span>
-                  {defaultModel && (
+                  {!providerConfig.models && defaultModel && (
                     <span className="text-[10px] font-mono" style={{ color: 'var(--text-tertiary)' }}>
                       {defaultModel}
                     </span>
@@ -412,6 +476,7 @@ export function ApiKeyForm({ initialData, fetchFn, members = [] }: Props) {
                       isDefault={true}
                       members={members}
                       onDelete={deleteKey}
+                      onModelChange={updateModel}
                       saving={saving}
                     />
                   ))}
@@ -452,6 +517,7 @@ export function ApiKeyForm({ initialData, fetchFn, members = [] }: Props) {
                       onDelete={deleteKey}
                       onAssign={assignMember}
                       onUnassign={unassignMember}
+                      onModelChange={updateModel}
                       saving={saving}
                     />
                   ))}
@@ -461,6 +527,7 @@ export function ApiKeyForm({ initialData, fetchFn, members = [] }: Props) {
           })}
         </div>
       </div>
+
     </div>
   );
 }
