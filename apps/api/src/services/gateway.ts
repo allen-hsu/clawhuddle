@@ -247,22 +247,44 @@ function writeAuthProfiles(orgId: string, userId: string, memberId: string): { p
 }
 
 /**
- * Live-update auth-profiles.json for all running gateways in an org.
- * Called after API key add/delete so credentials propagate without container restart.
+ * Live-update auth-profiles.json AND openclaw.json for all running gateways in an org.
+ * Called after API key changes so credentials and model overrides propagate without container restart.
  */
 export function syncAuthProfiles(orgId: string): void {
   const db = getDb();
   const runningMembers = db
     .prepare(
-      `SELECT om.id, om.user_id FROM org_members om
+      `SELECT om.id, om.user_id, om.gateway_token, om.gateway_subdomain FROM org_members om
      WHERE om.org_id = ? AND om.gateway_status IN ('running', 'deploying')`,
     )
-    .all(orgId) as { id: string; user_id: string }[];
+    .all(orgId) as { id: string; user_id: string; gateway_token: string; gateway_subdomain: string | null }[];
 
-  for (const { id, user_id } of runningMembers) {
+  for (const { id, user_id, gateway_token, gateway_subdomain } of runningMembers) {
     const gatewayDir = getGatewayDir(orgId, user_id);
-    if (fs.existsSync(gatewayDir)) {
-      writeAuthProfiles(orgId, user_id, id);
+    if (!fs.existsSync(gatewayDir)) continue;
+
+    // 1. Update auth-profiles.json (API keys / OAuth)
+    const { providerIds, modelOverrides } = writeAuthProfiles(orgId, user_id, id);
+
+    // 2. Update openclaw.json model overrides — merge so user customizations are preserved
+    const openclawPath = path.join(gatewayDir, "openclaw.json");
+    if (fs.existsSync(openclawPath)) {
+      try {
+        const existing = JSON.parse(fs.readFileSync(openclawPath, "utf-8"));
+        const updated = mergeOpenClawConfig(existing, {
+          port: GATEWAY_INTERNAL_PORT,
+          token: gateway_token,
+          activeProviderIds: providerIds,
+          modelOverrides,
+          channelTokens: getMemberChannelTokens(id),
+          allowedOrigins: gateway_subdomain
+            ? [`https://${gateway_subdomain}.${GATEWAY_DOMAIN}`]
+            : undefined,
+        });
+        fs.writeFileSync(openclawPath, JSON.stringify(updated, null, 2));
+      } catch {
+        // If openclaw.json is malformed, skip — don't break the sync
+      }
     }
   }
 }
