@@ -138,8 +138,15 @@ function createTraefikLabels(
 ): Record<string, string> {
   return {
     "traefik.enable": "true",
+    // HTTPS router with Let's Encrypt cert per subdomain
     [`traefik.http.routers.${containerName}.rule`]: `Host(\`${subdomain}.${GATEWAY_DOMAIN}\`)`,
-    [`traefik.http.routers.${containerName}.entrypoints`]: "web",
+    [`traefik.http.routers.${containerName}.entrypoints`]: "websecure",
+    [`traefik.http.routers.${containerName}.tls.certresolver`]: "le",
+    // HTTP -> HTTPS redirect router
+    [`traefik.http.routers.${containerName}-http.rule`]: `Host(\`${subdomain}.${GATEWAY_DOMAIN}\`)`,
+    [`traefik.http.routers.${containerName}-http.entrypoints`]: "web",
+    [`traefik.http.routers.${containerName}-http.middlewares`]: `${containerName}-redirect`,
+    [`traefik.http.middlewares.${containerName}-redirect.redirectscheme.scheme`]: "https",
     // Traefik connects to socat port (0.0.0.0:6101) which forwards to OpenClaw loopback port
     [`traefik.http.services.${containerName}.loadbalancer.server.port`]: String(
       GATEWAY_EXTERNAL_PORT,
