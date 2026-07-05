@@ -159,13 +159,15 @@ export interface ProviderConfig {
 export const PROVIDERS: ProviderConfig[] = [
   {
     id: 'anthropic', label: 'Anthropic', envVar: 'ANTHROPIC_API_KEY', placeholder: 'sk-ant-...',
-    defaultModel: 'anthropic/claude-sonnet-4-5',
+    defaultModel: 'anthropic/claude-fable-5',
     models: [
-      { id: 'anthropic/claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
-      { id: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-      { id: 'anthropic/claude-opus-4-5', label: 'Claude Opus 4.5' },
-      { id: 'anthropic/claude-opus-4-6', label: 'Claude Opus 4.6' },
+      { id: 'anthropic/claude-fable-5', label: 'Claude Fable 5' },
+      { id: 'anthropic/claude-opus-4-8', label: 'Claude Opus 4.8' },
       { id: 'anthropic/claude-opus-4-7', label: 'Claude Opus 4.7' },
+      { id: 'anthropic/claude-opus-4-6', label: 'Claude Opus 4.6' },
+      { id: 'anthropic/claude-opus-4-5', label: 'Claude Opus 4.5' },
+      { id: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+      { id: 'anthropic/claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
       { id: 'anthropic/claude-haiku-4-5', label: 'Claude Haiku 4.5' },
     ],
     supportsSetupToken: true, setupTokenInstructions: 'Run `claude setup-token` in your terminal and paste the result here.',
