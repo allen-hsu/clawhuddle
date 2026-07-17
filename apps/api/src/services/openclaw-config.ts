@@ -23,6 +23,15 @@ const CHANNEL_PLUGINS = [
   'slack',
 ];
 
+/**
+ * An entry in agents.defaults.models. `agentRuntime` binds the model to an
+ * OpenClaw agent runtime, which then serves it from its linked account instead
+ * of from models.providers[...].models[].
+ */
+export interface ModelEntry {
+  agentRuntime?: { id: string };
+}
+
 export interface ChannelTokens {
   telegram?: string;
   discord?: string;
@@ -76,7 +85,7 @@ export interface OpenClawConfig {
   agents?: {
     defaults: {
       model: { primary: string; fallbacks?: string[] };
-      models: Record<string, Record<string, never>>;
+      models: Record<string, ModelEntry>;
     };
   };
   channels?: Record<string, { enabled: boolean; botToken: string; dmPolicy?: string; allowFrom?: string[] }>;
@@ -206,12 +215,16 @@ export function generateOpenClawConfig(options: {
 
   if (activeProviders.length > 0) {
     const overrides = options.modelOverrides ?? {};
-    const models: Record<string, Record<string, never>> = {};
+    const models: Record<string, ModelEntry> = {};
     // Use user-selected model if set, otherwise provider default
     const resolveModel = (p: (typeof PROVIDERS)[number]) => overrides[p.id] || p.defaultModel;
 
     for (const p of activeProviders) {
-      models[resolveModel(p)] = {};
+      // A provider whose models come from an agent runtime must say so here.
+      // Enabling its plugin takes those models out of the built-in catalog, and
+      // an entry left empty sends OpenClaw looking in models.providers[...],
+      // where it finds nothing and fails every turn with "Unknown model".
+      models[resolveModel(p)] = p.agentRuntime ? { agentRuntime: { id: p.agentRuntime } } : {};
     }
     const primary = resolveModel(activeProviders[0]);
     const fallbacks = activeProviders.slice(1).map((p) => resolveModel(p));

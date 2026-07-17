@@ -138,6 +138,16 @@ export interface ProviderConfig {
   placeholder: string;
   /** Model ID used for agents.defaults.model in openclaw.json */
   defaultModel: string;
+  /**
+   * OpenClaw agent runtime that serves this provider's models, written as
+   * `agents.defaults.models[<id>].agentRuntime`. Set it for subscriptions whose
+   * models come from a runtime and its linked account rather than from a
+   * provider API: enabling such a plugin takes the model out of the built-in
+   * catalog, and without this OpenClaw looks it up in
+   * `models.providers[...].models[]`, finds nothing, and fails every agent turn
+   * with "Unknown model".
+   */
+  agentRuntime?: string;
   /** Available models the user can choose from */
   models?: ModelOption[];
   /** Whether this provider supports setup tokens (e.g. `claude setup-token`) */
@@ -197,7 +207,15 @@ export const PROVIDERS: ProviderConfig[] = [
   // `openai` in writeAuthProfiles(). The `openai-codex` id stays as the
   // platform-level provider so ChatGPT/Codex OAuth keys are tracked separately
   // from OpenAI API keys in the DB/UI and org primary-provider pin.
-  { id: 'openai-codex', label: 'OpenAI Codex', envVar: '', placeholder: '', defaultModel: 'openai/gpt-5.6', models: [{ id: 'openai/gpt-5.6', label: 'GPT-5.6' }, { id: 'openai/gpt-5.5', label: 'GPT-5.5' }], supportsOAuth: true, oauthInstructions: 'Run `codex` and sign in with your ChatGPT account, then run `cat ~/.codex/auth.json` and paste the JSON here.' },
+  // Codex models are served by the bundled `codex` agent runtime off the linked
+  // ChatGPT account, not by the OpenAI provider API — hence agentRuntime. They
+  // still use `openai/*` refs because OpenClaw merges Codex into that namespace.
+  //
+  // Which models a subscription offers comes from the linked account, so a new
+  // default has to be confirmed against a real one with
+  // `openclaw models list --provider openai` on a 2026.7.1 gateway — gpt-5.6
+  // was, and enumerates there at 1050k text+image.
+  { id: 'openai-codex', label: 'OpenAI Codex', envVar: '', placeholder: '', defaultModel: 'openai/gpt-5.6', agentRuntime: 'codex', models: [{ id: 'openai/gpt-5.6', label: 'GPT-5.6' }, { id: 'openai/gpt-5.5', label: 'GPT-5.5' }], supportsOAuth: true, oauthInstructions: 'Run `codex` and sign in with your ChatGPT account, then run `cat ~/.codex/auth.json` and paste the JSON here.' },
   { id: 'openrouter', label: 'OpenRouter', envVar: 'OPENROUTER_API_KEY', placeholder: 'sk-or-...', defaultModel: 'openrouter/anthropic/claude-sonnet-4.5' },
   { id: 'google', label: 'Google Gemini', envVar: 'GEMINI_API_KEY', placeholder: 'AIza...', defaultModel: 'google/gemini-2.5-pro' },
 ];
