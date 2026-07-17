@@ -1,4 +1,5 @@
 import Docker from "dockerode";
+import Database from "better-sqlite3";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -167,14 +168,30 @@ function createTraefikLabels(
 }
 
 /**
- * Writes auth-profiles.json for a gateway so OpenClaw reads credentials
- * from the file (hot-reloaded) instead of env vars.
- * Returns the list of provider IDs that have credentials configured.
+ * Writes auth-profiles.json for a gateway.
+ *
+ * OpenClaw does not read this file at run time (2026.6.11 and 2026.7.1 alike):
+ * the entrypoint's `openclaw doctor --fix` imports it into the agent's SQLite
+ * auth store and then consumes the file. That import only ADDS profile ids it
+ * has not seen — an id already present is never overwritten, and "present" only
+ * means the fields are there, not that the credential still works. So writing
+ * this file cannot by itself change a credential; see reconcileAuthProfileStore.
+ *
+ * Also returns a fingerprint per profile id, taken from the credential in our
+ * own database, which reconcile needs to tell an operator replacing a key apart
+ * from OpenClaw refreshing one.
  */
-function writeAuthProfiles(orgId: string, userId: string): { providerIds: string[]; modelOverrides: Record<string, string>; clawProxyKey: string | null } {
+function writeAuthProfiles(orgId: string, userId: string): {
+  providerIds: string[];
+  modelOverrides: Record<string, string>;
+  clawProxyKey: string | null;
+  profiles: Record<string, Record<string, unknown>>;
+  fingerprints: Record<string, string>;
+} {
   // Resolved = personal overrides where set, org defaults elsewhere
   const allKeys = getResolvedApiKeysForMember(orgId, userId);
   const profiles: Record<string, Record<string, unknown>> = {};
+  const fingerprints: Record<string, string> = {};
   const providerIds: string[] = [];
   const modelOverrides: Record<string, string> = {};
   const order: Record<string, string[]> = {};
@@ -219,7 +236,12 @@ function writeAuthProfiles(orgId: string, userId: string): { providerIds: string
           const payload = JSON.parse(
             Buffer.from(tokens.access_token.split(".")[1], "base64").toString(),
           );
-          if (payload.exp) expires = payload.exp;
+          // JWT `exp` is seconds; OpenClaw compares `expires` against Date.now()
+          // in milliseconds. Passing raw seconds reads as 1970, so the token
+          // looks expired on every single request and the gateway refreshes it
+          // constantly — which rotates the refresh token until the provider
+          // rejects the chain with refresh_token_invalidated.
+          if (payload.exp) expires = payload.exp * 1000;
         } catch { /* non-JWT */ }
 
         profileId = `${ns}:oauth${suffix}`;
@@ -245,6 +267,10 @@ function writeAuthProfiles(orgId: string, userId: string): { providerIds: string
       profiles[profileId] = { type: "api_key", provider: ns, key };
     }
 
+    // Fingerprint of the credential as WE hold it, not as OpenClaw stores it:
+    // this changes only when an operator supplies a different one.
+    fingerprints[profileId] = crypto.createHash("sha256").update(key).digest("hex").slice(0, 16);
+
     if (!order[ns]) order[ns] = [];
     order[ns].push(profileId);
   }
@@ -269,7 +295,109 @@ function writeAuthProfiles(orgId: string, userId: string): { providerIds: string
     }, null, 2),
   );
 
-  return { providerIds, modelOverrides, clawProxyKey };
+  return { providerIds, modelOverrides, clawProxyKey, profiles, fingerprints };
+}
+
+/** Profile ids minted by writeAuthProfiles(), e.g. "openai:oauth", "google:manual-2". */
+const MANAGED_PROFILE_ID = /^[^:]+:(manual|oauth|setup-token)(-\d+)?$/;
+
+/** Our record of which credential each profile id was last handed to the importer. */
+function authFingerprintPath(orgId: string, userId: string): string {
+  return path.join(
+    getGatewayDir(orgId, userId),
+    "agents", "main", "agent", ".clawhuddle-auth-fingerprints.json",
+  );
+}
+
+/**
+ * Lets `openclaw doctor --fix` import a credential the operator has replaced.
+ *
+ * The importer never overwrites a profile id it already has, so a key changed in
+ * the UI is written to auth-profiles.json, silently skipped at import, and the
+ * file consumed — the gateway keeps serving the old credential forever. We own
+ * the ids we mint, so we delete the ones whose source credential changed and let
+ * the importer add them back.
+ *
+ * Staleness is judged on a fingerprint of OUR copy of the credential, not on the
+ * stored value. For OAuth the store is legitimately newer than our file — the
+ * gateway writes refreshed tokens back under the same id — so comparing content
+ * would drop a live credential on every redeploy and re-import an original whose
+ * refresh token the provider has since rotated away.
+ *
+ * With no fingerprint on record we keep what the gateway has, for the same
+ * reason: the first run after this shipped only records, and the next real key
+ * change is caught. Ids are unchanged from before, so the order OpenClaw keeps
+ * in auth_profile_state still points at profiles that exist.
+ *
+ * Only call this while the container is stopped — the gateway holds the store
+ * open, and a running agent would not observe the change anyway.
+ */
+export function reconcileAuthProfileStore(
+  orgId: string,
+  userId: string,
+  profiles: Record<string, Record<string, unknown>>,
+  fingerprints: Record<string, string>,
+): void {
+  const storePath = path.join(
+    getGatewayDir(orgId, userId),
+    "agents", "main", "agent", "openclaw-agent.sqlite",
+  );
+  const recordFingerprints = () => {
+    try {
+      const target = authFingerprintPath(orgId, userId);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, JSON.stringify(fingerprints, null, 2));
+    } catch (err) {
+      console.warn(`[gateway] could not record auth fingerprints for ${orgId}/${userId}:`, err);
+    }
+  };
+
+  // No store yet — the first import has nothing to conflict with.
+  if (!fs.existsSync(storePath)) return recordFingerprints();
+
+  let previous: Record<string, string> = {};
+  try {
+    previous = JSON.parse(fs.readFileSync(authFingerprintPath(orgId, userId), "utf-8"));
+  } catch { /* first run, or unreadable — treated as "no record" below */ }
+
+  let store: Database.Database | undefined;
+  try {
+    store = new Database(storePath);
+    const row = store
+      .prepare("SELECT store_json FROM auth_profile_store WHERE store_key = 'primary'")
+      .get() as { store_json: string } | undefined;
+    if (!row) return recordFingerprints();
+
+    const parsed = JSON.parse(row.store_json) as { profiles?: Record<string, unknown> };
+    if (!parsed.profiles) return recordFingerprints();
+
+    const dropped: string[] = [];
+    for (const profileId of Object.keys(parsed.profiles)) {
+      if (!MANAGED_PROFILE_ID.test(profileId)) continue;
+      if (!profiles[profileId]) continue;           // not ours to manage right now
+      const before = previous[profileId];
+      if (before === undefined) continue;            // nothing to compare against — keep
+      if (before === fingerprints[profileId]) continue; // same credential — keep the refreshed one
+      delete parsed.profiles[profileId];
+      dropped.push(profileId);
+    }
+
+    recordFingerprints();
+    if (dropped.length === 0) return;
+
+    store
+      .prepare("UPDATE auth_profile_store SET store_json = ? WHERE store_key = 'primary'")
+      .run(JSON.stringify(parsed));
+    console.log(
+      `[gateway] auth store reconciled for ${orgId}/${userId}: dropped ${dropped.join(", ")} for re-import`,
+    );
+  } catch (err) {
+    // A malformed or unfamiliar store must not block a redeploy: the gateway
+    // still boots, it just keeps serving the previous credential.
+    console.warn(`[gateway] could not reconcile auth store for ${orgId}/${userId}:`, err);
+  } finally {
+    store?.close();
+  }
 }
 
 function getOrgPrimaryProvider(orgId: string): string | null {
@@ -452,7 +580,8 @@ export async function provisionGateway(orgId: string, memberId: string) {
   fs.mkdirSync(gatewayDir, { recursive: true });
 
   // Write auth-profiles.json (credentials read from file, not env vars)
-  const { providerIds, modelOverrides, clawProxyKey } = writeAuthProfiles(orgId, member.user_id);
+  const { providerIds, modelOverrides, clawProxyKey, profiles, fingerprints } = writeAuthProfiles(orgId, member.user_id);
+  reconcileAuthProfileStore(orgId, member.user_id, profiles, fingerprints);
   if (providerIds.length === 0)
     throw new Error("No API keys configured — add at least one provider key");
 
@@ -564,6 +693,12 @@ export async function startGateway(orgId: string, memberId: string) {
   const member = getMember(orgId, memberId);
   if (!member.gateway_port) throw new Error("No gateway deployed");
 
+  // A key may have changed while this gateway was stopped. Reconcile before it
+  // boots: the importer would otherwise skip the id it already has and the
+  // gateway would come back up on the old credential without saying so.
+  const { profiles, fingerprints } = writeAuthProfiles(orgId, member.user_id);
+  reconcileAuthProfileStore(orgId, member.user_id, profiles, fingerprints);
+
   const containerName = getContainerName(orgId, member.user_id);
   const container = docker.getContainer(containerName);
   await container.start();
@@ -638,7 +773,8 @@ export async function redeployGateway(orgId: string, memberId: string) {
   }
 
   // Write auth-profiles.json (credentials read from file, not env vars)
-  const { providerIds, modelOverrides, clawProxyKey } = writeAuthProfiles(orgId, member.user_id);
+  const { providerIds, modelOverrides, clawProxyKey, profiles, fingerprints } = writeAuthProfiles(orgId, member.user_id);
+  reconcileAuthProfileStore(orgId, member.user_id, profiles, fingerprints);
   if (providerIds.length === 0)
     throw new Error("No API keys configured — add at least one provider key");
 
