@@ -192,7 +192,12 @@ export const PROVIDERS: ProviderConfig[] = [
       { id: 'claw/claude-haiku-4', label: 'Claude Haiku 4' },
     ],
   },
-  { id: 'openai-codex', label: 'OpenAI Codex', envVar: '', placeholder: '', defaultModel: 'openai-codex/gpt-5.5', supportsOAuth: true, oauthInstructions: 'Run `codex` and sign in with your ChatGPT account, then run `cat ~/.codex/auth.json` and paste the JSON here.' },
+  // Codex subscription is served under OpenClaw's canonical `openai` namespace
+  // (model ref `openai/gpt-5.5`); the auth-profile provider is remapped to
+  // `openai` in writeAuthProfiles(). The `openai-codex` id stays as the
+  // platform-level provider so ChatGPT/Codex OAuth keys are tracked separately
+  // from OpenAI API keys in the DB/UI and org primary-provider pin.
+  { id: 'openai-codex', label: 'OpenAI Codex', envVar: '', placeholder: '', defaultModel: 'openai/gpt-5.6', models: [{ id: 'openai/gpt-5.6', label: 'GPT-5.6' }, { id: 'openai/gpt-5.5', label: 'GPT-5.5' }], supportsOAuth: true, oauthInstructions: 'Run `codex` and sign in with your ChatGPT account, then run `cat ~/.codex/auth.json` and paste the JSON here.' },
   { id: 'openrouter', label: 'OpenRouter', envVar: 'OPENROUTER_API_KEY', placeholder: 'sk-or-...', defaultModel: 'openrouter/anthropic/claude-sonnet-4.5' },
   { id: 'google', label: 'Google Gemini', envVar: 'GEMINI_API_KEY', placeholder: 'AIza...', defaultModel: 'google/gemini-2.5-pro' },
 ];

@@ -1,22 +1,26 @@
 import { PROVIDERS } from '@clawhuddle/shared';
 
-// Channel plugins that have working dependencies in the Docker image.
-// Excluded: matrix, nostr, tlon, twitch (missing npm modules in OpenClaw image)
+// Channel plugins enabled on every gateway — exactly the channels this platform
+// can hand a token to (see validChannels in routes/org/member-channels.ts).
+//
+// Everything else is deliberately left out. An enabled plugin is not free: only
+// telegram and imessage ship inside OpenClaw, so the rest are downloaded from npm
+// into the gateway's state on its first boot, and since 2026.7.1 that download is
+// load-bearing — a configured plugin that fails to install stops startup
+// migrations and the gateway refuses to come up at all (2026.6.11 only warned).
+// Enabling a channel we cannot configure buys nothing and puts another package
+// between a new gateway and starting.
+//
+// whatsapp is doubly excluded: it is the only channel sourced from ClawHub
+// (`clawhub:@openclaw/whatsapp`) rather than npm, so it also drags a second
+// registry into the boot path.
+//
+// Once installed, plugins are cached in the mounted state — later boots need no
+// network at all. Adding to this list re-opens that window on every gateway.
 const CHANNEL_PLUGINS = [
   'telegram',
-  'whatsapp',
   'discord',
   'slack',
-  'signal',
-  'imessage',
-  'irc',
-  'googlechat',
-  'msteams',
-  'mattermost',
-  'line',
-  'feishu',
-  'zalo',
-  'zalouser',
 ];
 
 export interface ChannelTokens {

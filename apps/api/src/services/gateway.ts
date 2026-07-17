@@ -195,6 +195,12 @@ function writeAuthProfiles(orgId: string, userId: string): { providerIds: string
     if (!providerIds.includes(provider)) providerIds.push(provider);
     if (default_model && !modelOverrides[provider]) modelOverrides[provider] = default_model;
 
+    // OpenClaw namespace for the auth profile. The `openai-codex` platform
+    // provider maps to OpenClaw's canonical `openai` namespace so gpt-5.5 auth
+    // resolves for `openai/gpt-5.5` model refs (Codex subscription rides the
+    // same `openai` provider as API keys, distinguished by profile id + order).
+    const ns = provider === "openai-codex" ? "openai" : provider;
+
     // Generate unique profile ID
     const count = (providerCounters[provider] ?? 0) + 1;
     providerCounters[provider] = count;
@@ -216,10 +222,10 @@ function writeAuthProfiles(orgId: string, userId: string): { providerIds: string
           if (payload.exp) expires = payload.exp;
         } catch { /* non-JWT */ }
 
-        profileId = `${provider}:oauth${suffix}`;
+        profileId = `${ns}:oauth${suffix}`;
         profiles[profileId] = {
           type: "oauth",
-          provider,
+          provider: ns,
           access: tokens.access_token,
           refresh: tokens.refresh_token,
           ...(expires ? { expires } : {}),
@@ -228,19 +234,19 @@ function writeAuthProfiles(orgId: string, userId: string): { providerIds: string
         continue;
       }
     } else if (credential_type === "token") {
-      profileId = `${provider}:setup-token${suffix}`;
+      profileId = `${ns}:setup-token${suffix}`;
       profiles[profileId] = {
         type: "token",
-        provider,
+        provider: ns,
         token: key,
       };
     } else {
-      profileId = `${provider}:manual${suffix}`;
-      profiles[profileId] = { type: "api_key", provider, key };
+      profileId = `${ns}:manual${suffix}`;
+      profiles[profileId] = { type: "api_key", provider: ns, key };
     }
 
-    if (!order[provider]) order[provider] = [];
-    order[provider].push(profileId);
+    if (!order[ns]) order[ns] = [];
+    order[ns].push(profileId);
   }
 
   // Only include order for providers with multiple profiles
