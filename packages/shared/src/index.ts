@@ -211,14 +211,13 @@ export const PROVIDERS: ProviderConfig[] = [
   // ChatGPT account, not by the OpenAI provider API — hence agentRuntime. They
   // still use `openai/*` refs because OpenClaw merges Codex into that namespace.
   //
-  // A Codex model has to be one the runtime offers for the linked account, which
-  // is a different (smaller) set than OpenClaw's `openai` catalog: gpt-5.6 lists
-  // fine under `models list` yet is rejected at run time as not offered by the
-  // runtime. gpt-5.5 is what this platform is known to run on. Before changing
-  // it, check against a real account on a gateway that already has
-  // agentRuntime set — `models list` on one without it reports the provider
-  // catalog and will happily show models the runtime cannot serve.
-  { id: 'openai-codex', label: 'OpenAI Codex', envVar: '', placeholder: '', defaultModel: 'openai/gpt-5.5', agentRuntime: 'codex', models: [{ id: 'openai/gpt-5.5', label: 'GPT-5.5' }], supportsOAuth: true, oauthInstructions: 'Run `codex` and sign in with your ChatGPT account, then run `cat ~/.codex/auth.json` and paste the JSON here.' },
+  // Codex serves 5.6 only as the sol/terra/luna variants — plain `gpt-5.6` is an
+  // OpenAI-API-provider model and the runtime rejects it, which is why it fails
+  // at run time despite listing fine. `openclaw models list` reports the provider
+  // catalog, not what the runtime accepts, so it is no help here; the slugs the
+  // runtime knows come from the Codex CLI it bundles, and openclaw's own default
+  // for a Codex subscription is openai/gpt-5.6-sol.
+  { id: 'openai-codex', label: 'OpenAI Codex', envVar: '', placeholder: '', defaultModel: 'openai/gpt-5.6-sol', agentRuntime: 'codex', models: [{ id: 'openai/gpt-5.6-sol', label: 'GPT-5.6 Sol' }, { id: 'openai/gpt-5.6-terra', label: 'GPT-5.6 Terra' }, { id: 'openai/gpt-5.6-luna', label: 'GPT-5.6 Luna' }, { id: 'openai/gpt-5.5', label: 'GPT-5.5' }], supportsOAuth: true, oauthInstructions: 'Run `codex` and sign in with your ChatGPT account, then run `cat ~/.codex/auth.json` and paste the JSON here.' },
   { id: 'openrouter', label: 'OpenRouter', envVar: 'OPENROUTER_API_KEY', placeholder: 'sk-or-...', defaultModel: 'openrouter/anthropic/claude-sonnet-4.5' },
   { id: 'google', label: 'Google Gemini', envVar: 'GEMINI_API_KEY', placeholder: 'AIza...', defaultModel: 'google/gemini-2.5-pro' },
 ];
